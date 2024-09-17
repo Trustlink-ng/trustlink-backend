@@ -5,7 +5,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
 import datetime
 from django.utils import timezone
 from .models import *
@@ -243,5 +243,72 @@ class ChangePassword(APIView):
             "message":"Password Successfully Updated",
             "statusCode":200
         }, status=status.HTTP_200_OK)
+
+class BeginForgotPassword(APIView):
+    def post(self, request):
+        data = request.data
+        email = data.get('email')
+        try:
+            user = User.objects.get(email=email)
+        except  user.DoesNotExist:
+            return Response({
+                "message":"This email is not registered",
+                "status":400
+            }, status=status.HTTP_400_BAD_REQUEST)
+        refresh = RefreshToken.for_user(user)
+        token = str(refresh.access_token)
+
+        domain = request.get_host()
+        # reset_path = reverse('password-reset-confirm', kwargs={'token':token})
+
+        protocol = 'https' if request.is_secure() else 'http'
+        reset_url = f"{protocol}://{domain}/auth/complete-reset?token={token}"
+
+        subject = "Password Reset Request"
+        message = f"Hi, {user.firstName}, \n\nPlease Click the link below to reset your password. Ignore if you didn't request a new password. \n\n{reset_url}"
+        send_mail(subject, message, EMAIL_HOST_USER, [user.email])
+
+        return Response({
+            "message":"Password reset link has been sent to your email",
+            "status": 200,
+        }, status=status.HTTP_200_OK)
+
+class CompleteReset(APIView):
+    def post(self, request):
+        token = request.GET.get('token')
+        data = request.data
+        new_password = data.get('new_password')
+        confirm = data.get('confirm')
+        if not token:
+            return Response({
+                "message":"Token is missing",
+                "status":400
+            }, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            access_token = AccessToken(token)
+            user_id = access_token['user_id']
+
+            user = User.objects.get(id=user_id)
+
+            if new_password != confirm:
+                return Response({
+                    "message":"Passwords don't match",
+                    "status":400
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            encrypted = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            user.password = encrypted
+            user.save()
+            return Response({
+                "message":"Password Reset Successfully",
+                "status":200
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message":str(e),
+                "statusCode":500
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 

@@ -5,5 +5,7 @@ urlpatterns=[
     path('auth/verify-email', VerifyMail.as_view(), name='verify-mail'),
     path('auth/login', LoginView.as_view(), name="user-login"),
     path('auth/resend-otp', SendOTP.as_view(), name="resend-otp"),
-    path('auth/change-password', ChangePassword.as_view(), name="change-password")
+    path('auth/change-password', ChangePassword.as_view(), name="change-password"),
+    path('auth/reset-password', BeginForgotPassword.as_view(), name='begin-reset'),
+    path('auth/complete-reset', CompleteReset.as_view(), name='complete-reset')
 ]
