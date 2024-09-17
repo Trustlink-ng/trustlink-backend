@@ -1,0 +1,13 @@
+{
+  "builds": [{
+    "src": "trustlink/wsgi.py",
+    "use": "@vercel/python",
+    "config": {"maxLambdaSize": "15mb", "runtime": "python 3.10"}
+  }],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "trustlink/wsgi.py"
+    }
+  ]
+}
