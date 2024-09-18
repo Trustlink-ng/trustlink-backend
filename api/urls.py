@@ -7,5 +7,7 @@ urlpatterns=[
     path('auth/resend-otp', SendOTP.as_view(), name="resend-otp"),
     path('auth/change-password', ChangePassword.as_view(), name="change-password"),
     path('auth/reset-password', BeginForgotPassword.as_view(), name='begin-reset'),
-    path('auth/complete-reset', CompleteReset.as_view(), name='complete-reset')
+    path('auth/complete-reset', CompleteReset.as_view(), name='complete-reset'),
+    path('store-banks', store_banks),
+    path('api/account', CreateAccount.as_view(), name="create")
 ]

@@ -1,4 +1,10 @@
+import json
+import os
+
+from django.http import JsonResponse
+from dotenv import load_dotenv
 import bcrypt
+import requests
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from rest_framework import status
@@ -13,7 +19,7 @@ from django.core.exceptions import ValidationError
 import random
 from .serializers import *
 from trustlink.settings import EMAIL_HOST_USER
-
+load_dotenv()
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
     def post(self, request):
@@ -308,6 +314,86 @@ class CompleteReset(APIView):
                 "message":str(e),
                 "statusCode":500
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+# Extracting banks data from the Kora API and storing in our DB
+def store_banks(request):
+    public_key = os.getenv("KORA_PUBLIC")
+    print(public_key)
+    # url = "https://api.paystack.co/bank"
+    url = "https://api.korapay.com/merchant/api/v1/misc/banks?countyrCode=NG"
+    headers = {
+        "Authorization": f"Bearer {public_key}",
+        "Content-Type": 'application/json'
+    }
+    payload = ""
+    response = requests.get(url, headers=headers, data=payload)
+
+    if response.status_code == 200:
+        try:
+            banks = response.json()
+            for bank in banks.get('data', []):
+                Banks.objects.update_or_create(
+                    name=bank['name'].strip,
+                    slug = bank['slug'],
+                    code = bank['code']
+                )
+            return JsonResponse(banks)
+        except ValueError:
+            return JsonResponse({"error": "Invalid JSON response"}, status=500)
+    else:
+        return JsonResponse({"error": f"Request failed with status code {response.status_code}"},
+                                status=response.status_code)
+
+class CreateAccount(APIView):
+    def get(self, request):
+        try:
+            banks = Banks.objects.all()
+            return Response({
+                "message":"Banks retrieved successfully.",
+                "banks": BankSerializer(banks, many=True).data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+
+        data = request.data
+        code = data['code']
+        account_number = data['account_number']
+        user = request.user
+        print(code, account_number,user)
+        try:
+            user_account = Account.objects.get(user=request.user)
+            return Response({
+                "message":"You can only have one account saved. Edit it from settings",
+                "statusCode":400
+            },status=status.HTTP_400_BAD_REQUEST)
+        except Account.DoesNotExist:
+            url = "https://api.korapay.com/merchant/api/v1/misc/banks/resolve"
+            payload = json.dumps({
+                "bank":code,
+                "account":account_number
+            })
+            headers = {
+                'Content-Type': 'application/json'
+            }
+            response = requests.request("POST",url, data=payload, headers=headers)
+            print(response.text)
+            if response.status_code == 200:
+                details =response.json()
+                dets = details.get('data')
+                user_account = Account.objects.create(user=user,bankCode=code, accountNumber=account_number, accountName=str(dets['account_name']))
+                return Response({
+                    "message":"Account saved successfully",
+                    "account details":AccountSerializer(user_account).data
+                }, status=status.HTTP_201_CREATED)
+            return Response({
+                "message":f"request error with error code {response.status_code}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 
