@@ -87,7 +87,7 @@ class RegisterView(APIView):
         except Exception as e:
             return Response({
                 "status": "Bad request",
-                "message": e,
+                "message": str(e),
                 "statusCode": 400
             }, status=status.HTTP_400_BAD_REQUEST)
 
