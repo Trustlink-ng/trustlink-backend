@@ -394,7 +394,48 @@ class CreateAccount(APIView):
                 "message":f"request error with error code {response.status_code}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class CreateWallet(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        data = request.data
+        if 'pin' not in data:
+            return Response({
+                'message': 'Pin is required to create a wallet',
+                'statusCode': 422
+            }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        if not isinstance(data['pin'], str) or not len(data['pin']) == 4:
+            return Response({
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        try:
+            int(data['pin'])
+        except ValueError:
+            return Response({
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if Wallet.objects.filter(user = request.user).exists():
+            return Response({
+                'message': 'Wallet already exists',
+                'statusCode': 400
+            }, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            encrypted_pin = bcrypt.hashpw(data['pin'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            request.user.pin = encrypted_pin
+            request.user.save()
+            Wallet.objects.create(user= request.user, balance = 0)
+            return Response({
+                'message' : 'Wallet created successfully',
+                'statusCode' : 201
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({
+                "message": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+            
 
-
+        
