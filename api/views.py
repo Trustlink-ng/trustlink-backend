@@ -523,4 +523,17 @@ def bank_transfer(amount, user):
     data['statusCode'] = 200
     return response.json(), response.status_code
 
+# def encryptAES256(encryptionKey, paymentData):
+#     try:
+#         iv = Random.get_random_bytes(16)
+#         encObj = AES.new(encryptionKey.encode("utf8"), AES.MODE_GCM, iv)
+#         cipherText,authTag = encObj.encrypt_and_digest(paymentData.encode("utf8"))
+#         iv64 = base64.b64encode(iv).decode('ascii')
+#         ivToHex = hexa(iv).decode()
+#         cipherTextToHex = hexa(cipherText).decode()
+#         authTagToHex = hexa(authTag).decode()
+#         result = ivToHex + ":" + cipherTextToHex + ":" + authTagToHex
+#         return result
+#     except Exception as e:
+#         print(e)
 
