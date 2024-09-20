@@ -9,5 +9,6 @@ urlpatterns=[
     path('auth/reset-password', BeginForgotPassword.as_view(), name='begin-reset'),
     path('auth/complete-reset', CompleteReset.as_view(), name='complete-reset'),
     path('store-banks', store_banks),
-    path('api/account', CreateAccount.as_view(), name="create")
+    path('api/account', CreateAccount.as_view(), name="create"),
+    path('api/withdraw',WithdrawWallet.as_view(), name='withdraw')
 ]

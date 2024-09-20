@@ -1,6 +1,5 @@
 import json
 import os
-
 from django.http import JsonResponse
 from dotenv import load_dotenv
 import bcrypt
@@ -393,6 +392,69 @@ class CreateAccount(APIView):
             return Response({
                 "message":f"request error with error code {response.status_code}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+def kora_payout(request, amount, bank, account, name, email):
+    url = "https://api.korapay.com/merchant/api/v1/transactions/disburse"
+
+    payload = json.dumps({
+        "reference": "your-uniq-reference-001",
+        "destination": {
+            "type": "bank_account",
+            "amount": amount,
+            "currency": "NGN",
+            "narration": "Test Transfer Payment",
+            "bank_account": {
+                "bank": bank,
+                "account": account
+            },
+            "customer": {
+                "name": name,
+                "email": email
+            }
+        }
+    })
+    headers = {
+        'Content-Type': 'application/json',
+        "Authorization": f"Bearer {os.getenv('KORA_SECRET')}"
+    }
+
+    response = requests.request("POST", url, headers=headers, data=payload)
+    result = response.json()
+    return response.status_code
+    print(response.text)
+
+class WithdrawWallet(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        data = request.data
+        amount = data['amount']
+        try:
+            wallet = Wallet.objects.get(user=request.user)
+            try:
+                account = Account.objects.get(user= request.user)
+                if wallet.balance - float(amount) >= 100:
+                    payment = kora_payout(str(amount),str(account.bankCode), str(account.accountNumber),str(request.user.firstName),str(request.user.email))
+                    if payment == 200:
+                        return Response({
+                            "message":"Withdrawal Processsed Successfully. You will be credited shortly",
+                            "statusCode":200
+                        }, status=status.HTTP_200_OK)
+                    return Response({
+                        "message":f"Request failed with status code {payment}"
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response({
+                    "message":"Insufficient wallet balance",
+                    "statusCode":400
+                }, status=status.HTTP_400_BAD_REQUEST)
+            except Account.DoesNotExist:
+                return Response({
+                    "message":"Account details not found"
+                }, status=status.HTTP_404_NOT_FOUND)
+        except Wallet.DoesNotExist:
+            return Response({
+                "message": "User Wallet not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
 
 
 
