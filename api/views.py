@@ -8,7 +8,7 @@ import requests
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
@@ -19,6 +19,8 @@ from django.core.exceptions import ValidationError
 import random
 from .serializers import *
 from trustlink.settings import EMAIL_HOST_USER,  KORA_SECRET
+import hashlib
+import hmac
 load_dotenv()
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
@@ -461,14 +463,15 @@ class BankTransferDeposit(APIView):
         "customer": {
             'name': f'{user.firstName} {user.lastName}',
         	"email": f'{user.email}'
-            }
+            },
+        # 'notification_url' : '' #webhook kora calls on success
         })
         headers = {
             'Authorization': f'Bearer {KORA_SECRET}',
             'Content-Type' : 'application/json'
         }
         response = requests.post(url=url, data=payload, headers= headers)
-        if response.status_code == 200:
+        if response.status_code == 200: 
             data = response.json()['data']['bank_account']
             data['statusCode'] = 200
             return Response(data, status=status.HTTP_200_OK)
@@ -477,6 +480,34 @@ class BankTransferDeposit(APIView):
             data['statusCode'] = response.status_code
             return Response(data, status= response.status_code)
 
-            
+class KoraWebhook(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+    # Check if the request is a POST
+        if 'HTTP_X_KORAPAY_SIGNATURE' not in request.headers:
+            return Response({'error': 'Invalid request'}, status=400)
 
-        
+        # Get the request body and signature
+        request_body = json.loads(request.body)
+        webhook_signature = request.headers['HTTP_X_KORAPAY_SIGNATURE']
+
+        # Create a signature for comparison
+        calculated_signature = hmac.new(
+            KORA_SECRET.encode('utf-8'),
+            json.dumps(request_body['data']).encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+
+        # Verify the signature
+        if webhook_signature != calculated_signature:
+            return JsonResponse({'error': 'Invalid signature'}, status=400)
+
+        # Process the payment data (if signature is valid)
+        payment_status = request_body.get('data', {}).get('status')
+        transaction_reference = request_body.get('data', {}).get('reference')
+
+        if payment_status == 'successful':
+            # Update your database with the successful payment
+            pass  # Your logic here
+
+        return JsonResponse({'status': 'success'}, status=200)
