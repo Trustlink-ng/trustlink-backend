@@ -1,6 +1,6 @@
 import json
 import os
-
+import uuid
 from django.http import JsonResponse
 from dotenv import load_dotenv
 import bcrypt
@@ -18,7 +18,7 @@ from .models import *
 from django.core.exceptions import ValidationError
 import random
 from .serializers import *
-from trustlink.settings import EMAIL_HOST_USER
+from trustlink.settings import EMAIL_HOST_USER,  KORA_SECRET
 load_dotenv()
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
@@ -435,6 +435,47 @@ class CreateWallet(APIView):
                 "message": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class BankTransferDeposit(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        user= request.user
+        data = request.data
+        if not data.get('amount'):
+            return Response({
+                'message' :'Amount is required',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        try:
+            float(data['amount'])
+        except ValueError:
+            return Response({
+                'message' :'Amount is required as an integer or float',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
+        payload = json.dumps({
+        "reference": f"deposit-{user.id}-{str(uuid.uuid4())}", #unique reference for each deposit
+        "amount": data['amount'],
+        "currency": "NGN",
+        "customer": {
+            'name': f'{user.firstName} {user.lastName}',
+        	"email": f'{user.email}'
+            }
+        })
+        headers = {
+            'Authorization': f'Bearer {KORA_SECRET}',
+            'Content-Type' : 'application/json'
+        }
+        response = requests.post(url=url, data=payload, headers= headers)
+        if response.status_code == 200:
+            data = response.json()['data']['bank_account']
+            data['statusCode'] = 200
+            return Response(data, status=status.HTTP_200_OK)
+        else:
+            data = response.json()
+            data['statusCode'] = response.status_code
+            return Response(data, status= response.status_code)
 
             
 

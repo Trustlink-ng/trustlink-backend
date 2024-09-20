@@ -10,5 +10,6 @@ urlpatterns=[
     path('auth/complete-reset', CompleteReset.as_view(), name='complete-reset'),
     path('store-banks', store_banks),
     path('api/account', CreateAccount.as_view(), name="create"),
-    path('api/wallet', CreateWallet.as_view(), name='create-wallet')
+    path('api/wallet', CreateWallet.as_view(), name='create-wallet'),
+    path('api/deposit/transfer', BankTransferDeposit.as_view())
 ]
