@@ -84,7 +84,7 @@ class Transaction(models.Model):
     date = models.DateTimeField(auto_now_add=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='Pending')
     code = models.CharField(max_length=5)
-
+    reference = models.CharField(max_length= 100, null=True)
     def __str__(self):
         return f"{self.sender.email} to {self.receiver.email} on {self.date}"
 
@@ -104,6 +104,7 @@ class History(models.Model):
     type = models.CharField(max_length=7, choices=TYPE)
     amount = models.FloatField()
     date = models.DateTimeField(auto_now_add=True, null=True)
+    reference = models.CharField(max_length= 100, null=True)
 
 class Banks(models.Model):
     name = models.CharField(max_length=255)

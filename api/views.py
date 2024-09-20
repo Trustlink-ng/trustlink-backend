@@ -455,30 +455,16 @@ class BankTransferDeposit(APIView):
                 'message' :'Amount is required as an integer or float',
                 'statusCode': 422
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
-        payload = json.dumps({
-        "reference": f"deposit-{user.id}-{str(uuid.uuid4())}", #unique reference for each deposit
-        "amount": data['amount'],
-        "currency": "NGN",
-        "customer": {
-            'name': f'{user.firstName} {user.lastName}',
-        	"email": f'{user.email}'
-            },
-        # 'notification_url' : '' #webhook kora calls on success
-        })
-        headers = {
-            'Authorization': f'Bearer {KORA_SECRET}',
-            'Content-Type' : 'application/json'
-        }
-        response = requests.post(url=url, data=payload, headers= headers)
-        if response.status_code == 200: 
-            data = response.json()['data']['bank_account']
+        response, status_code = bank_transfer(amount=data['amount'], user=user)
+        if status_code == 200: 
+            data = response['data']['bank_account']
             data['statusCode'] = 200
             return Response(data, status=status.HTTP_200_OK)
         else:
             data = response.json()
             data['statusCode'] = response.status_code
             return Response(data, status= response.status_code)
+
 
 class KoraWebhook(APIView):
     permission_classes = [AllowAny]
@@ -500,7 +486,7 @@ class KoraWebhook(APIView):
 
         # Verify the signature
         if webhook_signature != calculated_signature:
-            return JsonResponse({'error': 'Invalid signature'}, status=400)
+            return Response({'error': 'Invalid signature'}, status=400)
 
         # Process the payment data (if signature is valid)
         payment_status = request_body.get('data', {}).get('status')
@@ -510,4 +496,25 @@ class KoraWebhook(APIView):
             # Update your database with the successful payment
             pass  # Your logic here
 
-        return JsonResponse({'status': 'success'}, status=200)
+        # return JsonResponse({'status': 'success'}, status=200)
+
+def bank_transfer(amount, user):
+    url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
+    payload = json.dumps({
+    "reference": f"deposit-{user.id}-{str(uuid.uuid4())}", #unique reference for each deposit
+    "amount": f'{amount}',
+    "currency": "NGN",
+    "customer": {
+        'name': f'{user.firstName} {user.lastName}',
+    	"email": f'{user.email}'
+        },
+    # 'notification_url' : '' #webhook kora calls on success
+    })
+    headers = {
+        'Authorization': f'Bearer {KORA_SECRET}',
+        'Content-Type' : 'application/json'
+    }
+    response = requests.post(url=url, data=payload, headers= headers)
+    data = response.json()['data']['bank_account']
+    data['statusCode'] = 200
+    return response.json(), response.status_code
