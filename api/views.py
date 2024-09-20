@@ -18,9 +18,7 @@ from .models import *
 from django.core.exceptions import ValidationError
 import random
 from .serializers import *
-from trustlink.settings import EMAIL_HOST_USER,  KORA_SECRET
-import hashlib
-import hmac
+from trustlink.settings import EMAIL_HOST_USER, KORA_SECRET
 load_dotenv()
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
@@ -554,23 +552,6 @@ class KoraWebhook(APIView):
         request_body = json.loads(request.body)
         webhook_signature = request.headers['HTTP_X_KORAPAY_SIGNATURE']
 
-        # Create a signature for comparison
-        calculated_signature = hmac.new(
-            KORA_SECRET.encode('utf-8'),
-            json.dumps(request_body['data']).encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
 
-        # Verify the signature
-        if webhook_signature != calculated_signature:
-            return JsonResponse({'error': 'Invalid signature'}, status=400)
 
-        # Process the payment data (if signature is valid)
-        payment_status = request_body.get('data', {}).get('status')
-        transaction_reference = request_body.get('data', {}).get('reference')
 
-        if payment_status == 'successful':
-            # Update your database with the successful payment
-            pass  # Your logic here
-
-        return JsonResponse({'status': 'success'}, status=200)

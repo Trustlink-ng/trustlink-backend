@@ -1,7 +1,8 @@
 from django.urls import path
 from .views import *
-urlpatterns=[
-    path('auth/register',RegisterView.as_view(), name="Register"),
+
+urlpatterns = [
+    path('auth/register', RegisterView.as_view(), name="Register"),
     path('auth/verify-email', VerifyMail.as_view(), name='verify-mail'),
     path('auth/login', LoginView.as_view(), name="user-login"),
     path('auth/resend-otp', SendOTP.as_view(), name="resend-otp"),
@@ -10,7 +11,7 @@ urlpatterns=[
     path('auth/complete-reset', CompleteReset.as_view(), name='complete-reset'),
     path('store-banks', store_banks),
     path('api/account', CreateAccount.as_view(), name="create"),
-    path('api/withdraw',WithdrawWallet.as_view(), name='withdraw'),
     path('api/wallet', CreateWallet.as_view(), name='create-wallet'),
-    path('api/deposit/transfer', BankTransferDeposit.as_view())
+    path('api/deposit/transfer', BankTransferDeposit.as_view()),
+    path('api/withdraw', WithdrawWallet.as_view(), name='withdraw')
 ]
