@@ -1,6 +1,6 @@
 import json
 import os
-
+import uuid
 from django.http import JsonResponse
 from dotenv import load_dotenv
 import bcrypt
@@ -8,7 +8,7 @@ import requests
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
@@ -18,7 +18,7 @@ from .models import *
 from django.core.exceptions import ValidationError
 import random
 from .serializers import *
-from trustlink.settings import EMAIL_HOST_USER
+from trustlink.settings import EMAIL_HOST_USER, KORA_SECRET
 load_dotenv()
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
@@ -394,6 +394,163 @@ class CreateAccount(APIView):
                 "message":f"request error with error code {response.status_code}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+def kora_payout(amount, bank, account, name, email):
+    url = "https://api.korapay.com/merchant/api/v1/transactions/disburse"
+
+    payload = json.dumps({
+        "reference": "your-uniq-reference-001",
+        "destination": {
+            "type": "bank_account",
+            "amount": amount,
+            "currency": "NGN",
+            "narration": "Test Transfer Payment",
+            "bank_account": {
+                "bank": bank,
+                "account": account
+            },
+            "customer": {
+                "name": name,
+                "email": email
+            }
+        }
+    })
+    headers = {
+        'Content-Type': 'application/json',
+        "Authorization": f"Bearer {os.getenv('KORA_SECRET')}"
+    }
+
+    response = requests.request("POST", url, headers=headers, data=payload)
+    result = response.json()
+    print("payload:",payload)
+    print("response:",response.text)
+    return response.status_code
+
+class WithdrawWallet(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        data = request.data
+        amount = data['amount']
+        try:
+            wallet = Wallet.objects.get(user=request.user)
+            try:
+                account = Account.objects.get(user= request.user)
+                if wallet.balance - float(amount) >= 100:
+                    payment = kora_payout(str(amount),str(account.bankCode), str(account.accountNumber),str(request.user.firstName),str(request.user.email))
+                    if payment == 200:
+                        return Response({
+                            "message":"Withdrawal Processsed Successfully. You will be credited shortly",
+                            "statusCode":200
+                        }, status=status.HTTP_200_OK)
+                    return Response({
+                        "message":f"Request failed with status code {payment}"
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response({
+                    "message":"Insufficient wallet balance",
+                    "statusCode":400
+                }, status=status.HTTP_400_BAD_REQUEST)
+            except Account.DoesNotExist:
+                return Response({
+                    "message":"Account details not found"
+                }, status=status.HTTP_404_NOT_FOUND)
+        except Wallet.DoesNotExist:
+            return Response({
+                "message": "User Wallet not found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+class CreateWallet(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        data = request.data
+        if 'pin' not in data:
+            return Response({
+                'message': 'Pin is required to create a wallet',
+                'statusCode': 422
+            }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        if not isinstance(data['pin'], str) or not len(data['pin']) == 4:
+            return Response({
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        try:
+            int(data['pin'])
+        except ValueError:
+            return Response({
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if Wallet.objects.filter(user = request.user).exists():
+            return Response({
+                'message': 'Wallet already exists',
+                'statusCode': 400
+            }, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            encrypted_pin = bcrypt.hashpw(data['pin'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            request.user.pin = encrypted_pin
+            request.user.save()
+            Wallet.objects.create(user= request.user, balance = 0)
+            return Response({
+                'message' : 'Wallet created successfully',
+                'statusCode' : 201
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({
+                "message": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class BankTransferDeposit(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        user= request.user
+        data = request.data
+        if not data.get('amount'):
+            return Response({
+                'message' :'Amount is required',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        try:
+            float(data['amount'])
+        except ValueError:
+            return Response({
+                'message' :'Amount is required as an integer or float',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
+        payload = json.dumps({
+        "reference": f"deposit-{user.id}-{str(uuid.uuid4())}", #unique reference for each deposit
+        "amount": data['amount'],
+        "currency": "NGN",
+        "customer": {
+            'name': f'{user.firstName} {user.lastName}',
+        	"email": f'{user.email}'
+            },
+        # 'notification_url' : '' #webhook kora calls on success
+        })
+        headers = {
+            'Authorization': f'Bearer {KORA_SECRET}',
+            'Content-Type' : 'application/json'
+        }
+        response = requests.post(url=url, data=payload, headers= headers)
+        if response.status_code == 200: 
+            data = response.json()['data']['bank_account']
+            data['statusCode'] = 200
+            return Response(data, status=status.HTTP_200_OK)
+        else:
+            data = response.json()
+            data['statusCode'] = response.status_code
+            return Response(data, status= response.status_code)
+
+class KoraWebhook(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+    # Check if the request is a POST
+        if 'HTTP_X_KORAPAY_SIGNATURE' not in request.headers:
+            return Response({'error': 'Invalid request'}, status=400)
+
+        # Get the request body and signature
+        request_body = json.loads(request.body)
+        webhook_signature = request.headers['HTTP_X_KORAPAY_SIGNATURE']
 
 
 
