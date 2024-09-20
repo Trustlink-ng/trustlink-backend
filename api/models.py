@@ -23,11 +23,12 @@ class User(AbstractBaseUser):
     lastName = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=12, blank=True, null=True)
-    username = models.CharField(max_length=25, unique=True)
+    username = models.CharField(max_length=25, unique=True, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True, null=True)
+    pin = models.CharField(max_length=255, null=True, blank=True)
 
     objects = CustomUserManager()
 

@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from django.http import JsonResponse
 from dotenv import load_dotenv
 import bcrypt
@@ -7,7 +8,7 @@ import requests
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
@@ -17,7 +18,9 @@ from .models import *
 from django.core.exceptions import ValidationError
 import random
 from .serializers import *
-from trustlink.settings import EMAIL_HOST_USER
+from trustlink.settings import EMAIL_HOST_USER,  KORA_SECRET
+import hashlib
+import hmac
 load_dotenv()
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
@@ -393,7 +396,7 @@ class CreateAccount(APIView):
                 "message":f"request error with error code {response.status_code}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-def kora_payout(request, amount, bank, account, name, email):
+def kora_payout(amount, bank, account, name, email):
     url = "https://api.korapay.com/merchant/api/v1/transactions/disburse"
 
     payload = json.dumps({
@@ -420,8 +423,9 @@ def kora_payout(request, amount, bank, account, name, email):
 
     response = requests.request("POST", url, headers=headers, data=payload)
     result = response.json()
+    print("payload:",payload)
+    print("response:",response.text)
     return response.status_code
-    print(response.text)
 
 class WithdrawWallet(APIView):
     permission_classes = [IsAuthenticated]
@@ -455,8 +459,118 @@ class WithdrawWallet(APIView):
                 "message": "User Wallet not found"
             }, status=status.HTTP_404_NOT_FOUND)
 
+class CreateWallet(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        data = request.data
+        if 'pin' not in data:
+            return Response({
+                'message': 'Pin is required to create a wallet',
+                'statusCode': 422
+            }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        if not isinstance(data['pin'], str) or not len(data['pin']) == 4:
+            return Response({
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        try:
+            int(data['pin'])
+        except ValueError:
+            return Response({
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if Wallet.objects.filter(user = request.user).exists():
+            return Response({
+                'message': 'Wallet already exists',
+                'statusCode': 400
+            }, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            encrypted_pin = bcrypt.hashpw(data['pin'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            request.user.pin = encrypted_pin
+            request.user.save()
+            Wallet.objects.create(user= request.user, balance = 0)
+            return Response({
+                'message' : 'Wallet created successfully',
+                'statusCode' : 201
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({
+                "message": str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class BankTransferDeposit(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        user= request.user
+        data = request.data
+        if not data.get('amount'):
+            return Response({
+                'message' :'Amount is required',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        try:
+            float(data['amount'])
+        except ValueError:
+            return Response({
+                'message' :'Amount is required as an integer or float',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
+        payload = json.dumps({
+        "reference": f"deposit-{user.id}-{str(uuid.uuid4())}", #unique reference for each deposit
+        "amount": data['amount'],
+        "currency": "NGN",
+        "customer": {
+            'name': f'{user.firstName} {user.lastName}',
+        	"email": f'{user.email}'
+            },
+        # 'notification_url' : '' #webhook kora calls on success
+        })
+        headers = {
+            'Authorization': f'Bearer {KORA_SECRET}',
+            'Content-Type' : 'application/json'
+        }
+        response = requests.post(url=url, data=payload, headers= headers)
+        if response.status_code == 200: 
+            data = response.json()['data']['bank_account']
+            data['statusCode'] = 200
+            return Response(data, status=status.HTTP_200_OK)
+        else:
+            data = response.json()
+            data['statusCode'] = response.status_code
+            return Response(data, status= response.status_code)
 
+class KoraWebhook(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+    # Check if the request is a POST
+        if 'HTTP_X_KORAPAY_SIGNATURE' not in request.headers:
+            return Response({'error': 'Invalid request'}, status=400)
 
+        # Get the request body and signature
+        request_body = json.loads(request.body)
+        webhook_signature = request.headers['HTTP_X_KORAPAY_SIGNATURE']
 
+        # Create a signature for comparison
+        calculated_signature = hmac.new(
+            KORA_SECRET.encode('utf-8'),
+            json.dumps(request_body['data']).encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
 
+        # Verify the signature
+        if webhook_signature != calculated_signature:
+            return JsonResponse({'error': 'Invalid signature'}, status=400)
+
+        # Process the payment data (if signature is valid)
+        payment_status = request_body.get('data', {}).get('status')
+        transaction_reference = request_body.get('data', {}).get('reference')
+
+        if payment_status == 'successful':
+            # Update your database with the successful payment
+            pass  # Your logic here
+
+        return JsonResponse({'status': 'success'}, status=200)
