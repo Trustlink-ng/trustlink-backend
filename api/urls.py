@@ -13,5 +13,5 @@ urlpatterns = [
     path('api/account', CreateAccount.as_view(), name="create"),
     path('api/wallet', CreateWallet.as_view(), name='create-wallet'),
     path('api/deposit/transfer', BankTransferDeposit.as_view()),
-    path('api/withdraw', WithdrawWallet.as_view(), name='withdraw')
+    path('api/withdraw', WithdrawWallet.as_view(), name='withdrawal')
 ]
