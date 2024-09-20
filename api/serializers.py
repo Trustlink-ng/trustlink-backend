@@ -4,7 +4,7 @@ from .models import *
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['firstName','lastName','email','phone']
+        fields = ['firstName','lastName','email','phone', 'username']
 
 class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -20,3 +20,8 @@ class AccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = Account
         fields = '__all__'
+
+class WalletSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Wallet
+        fields = "__all__"

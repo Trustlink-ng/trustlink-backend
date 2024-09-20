@@ -28,7 +28,7 @@ class User(AbstractBaseUser):
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True, null=True)
-    pin= models.CharField(max_length=255, null=True, blank=True)
+    pin = models.CharField(max_length=256, null=True, blank=True)
 
     objects = CustomUserManager()
 
