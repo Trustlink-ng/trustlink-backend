@@ -175,4 +175,7 @@ EMAIL_DEBUG = True
 
 AUTH_USER_MODEL = 'api.User'
 KORA_SECRET = os.getenv('KORA_SECRET')
+<<<<<<< HEAD
 ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')
+=======
+>>>>>>> f2ad347424c206a6c9576c1de41bf193f4ca8107
