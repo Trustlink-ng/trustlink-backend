@@ -23,7 +23,6 @@ load_dotenv()
 from django.db.models import Q
 from .models import *
 
-
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
     def post(self, request):
@@ -96,7 +95,6 @@ class RegisterView(APIView):
                 "statusCode": 400
             }, status=status.HTTP_400_BAD_REQUEST)
 
-
 # Verify Email Via OTP
 class VerifyMail(APIView):
     def post(self, request):
@@ -149,7 +147,6 @@ class VerifyMail(APIView):
                 "user": UserSerializer(user).data
             }
         }, status=status.HTTP_200_OK)
-
 
 # User Login
 class LoginView(APIView):
@@ -209,7 +206,6 @@ class LoginView(APIView):
                 "statusCode": 401
             }, status=status.HTTP_401_UNAUTHORIZED)
 
-
 class SendOTP(APIView):
     def post(self, request):
         data = request.data
@@ -253,7 +249,6 @@ class SendOTP(APIView):
             return Response({
                 "message": "User email has not been registered"
             })
-
 
 class ChangePassword(APIView):
     permission_classes = [IsAuthenticated]
@@ -306,7 +301,6 @@ class ChangePassword(APIView):
             "statusCode": 200
         }, status=status.HTTP_200_OK)
 
-
 class BeginForgotPassword(APIView):
     def post(self, request):
         data = request.data
@@ -340,7 +334,6 @@ class BeginForgotPassword(APIView):
             "message": "Password reset link has been sent to your email",
             "status": 200,
         }, status=status.HTTP_200_OK)
-
 
 class CompleteReset(APIView):
     def post(self, request):
@@ -390,7 +383,6 @@ class CompleteReset(APIView):
                 "statusCode": 500
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
 # Extracting banks data from the Kora API and storing in our DB
 def store_banks(request):
     public_key = os.getenv("KORA_PUBLIC")
@@ -419,7 +411,6 @@ def store_banks(request):
     else:
         return JsonResponse({"error": f"Request failed with status code {response.status_code}"},
                             status=response.status_code)
-
 
 class CreateAccount(APIView):
     def get(self, request):
@@ -534,7 +525,6 @@ class CreateAccount(APIView):
                 "message": "You do not have any account saved"
             }, status=status.HTTP_404_NOT_FOUND)
 
-
 def kora_payout(amount, bank, account, name, email):
     url = "https://api.korapay.com/merchant/api/v1/transactions/disburse"
 
@@ -565,7 +555,6 @@ def kora_payout(amount, bank, account, name, email):
     print("payload:", payload)
     print("response:", response.text)
     return response.status_code
-
 
 class WithdrawWallet(APIView):
     permission_classes = [IsAuthenticated]
@@ -617,7 +606,6 @@ class WithdrawWallet(APIView):
             return Response({
                 "message": "User Wallet not found"
             }, status=status.HTTP_404_NOT_FOUND)
-
 
 class CreateWallet(APIView):
     permission_classes = [IsAuthenticated]
@@ -722,7 +710,6 @@ class CreateWallet(APIView):
                 "message": "Wallet does not exist"
             }, status=status.HTTP_404_NOT_FOUND)
 
-
 class BankTransferDeposit(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -767,7 +754,6 @@ class BankTransferDeposit(APIView):
             data['statusCode'] = response.status_code
             return Response(data, status=response.status_code)
 
-
 class KoraWebhook(APIView):
     permission_classes = [AllowAny]
 
@@ -779,7 +765,6 @@ class KoraWebhook(APIView):
         # Get the request body and signature
         request_body = json.loads(request.body)
         webhook_signature = request.headers['HTTP_X_KORAPAY_SIGNATURE']
-
 
 class Users(APIView):
     permission_classes = [IsAuthenticated]
@@ -795,7 +780,6 @@ class Users(APIView):
             return Response({
                 "message": "User not found",
             }, status=status.HTTP_404_NOT_FOUND)
-
 
 class WalletPayment(APIView):
     permission_classes = [IsAuthenticated]
@@ -865,4 +849,56 @@ class WalletPayment(APIView):
             return Response({
                 "message":f"Internal Server Error-{str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class VerifyPayment(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request,id):
+        data = request.data
+        if 'code' not in data or not data.get('code'):
+            return Response({
+                "status": "Bad Request",
+                "message": "Code is required"
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        code = data['code']
+        try:
+            try:
+                transaction = Transaction.objects.get(id=id)
+                recipient = User.objects.get(email=request.user.email)
+                if transaction.status == 'Pending':
+                    if transaction.receiver == recipient:
+                        if code == transaction.code:
+                            recipient.wallet.balance =+ transaction.amount
+                            recipient.wallet.save()
+                            transaction.status = 'Completed'
+                            transaction.save()
+                            send_mail(f'Transaction {transaction.id}{transaction.date} has been completed!!',
+                                      f'Your Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.',
+                                      EMAIL_HOST_USER, [recipient.email], fail_silently=False)
+                            send_mail(f'Transaction {transaction.id}{transaction.date} has been completed!!',
+                                      f"{recipient.email}'s Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.",
+                                      EMAIL_HOST_USER, [recipient.email], fail_silently=False)
+                            return Response({
+                                "message":"Transaction Successful. Your wallet will be credited shortly",
+                                "data":TransactionSerializer(transaction).data
+                            }, status=status.HTTP_200_OK)
+                        return Response({
+                            "message":"Invalid Verification Code."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({
+                        "message": "You do not have access to verify this transaction."
+                    }, status=status.HTTP_401_UNAUTHORIZED)
+                return Response({
+                    "message":"This Transaction has been resolved."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            except Transaction.DoesNotExist:
+                return Response({
+                    "message": f"Transaction with id {id} not found"
+                }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                "message": f"Internal Server Error - {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 

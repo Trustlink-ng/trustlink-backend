@@ -15,5 +15,6 @@ urlpatterns = [
     path('api/deposit/transfer', BankTransferDeposit.as_view()),
     path('api/withdraw', WithdrawWallet.as_view(), name='withdrawal'),
     path('api/me', Users.as_view(), name="user"),
-    path('api/wallet/pay', WalletPayment.as_view(), name='pay-with-wallet')
+    path('api/wallet/pay', WalletPayment.as_view(), name='pay-with-wallet'),
+    path('api/verify-transaction/<int:id>', VerifyPayment.as_view(), name="verify-payment")
 ]
