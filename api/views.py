@@ -74,7 +74,7 @@ class RegisterView(APIView):
         otp = str(random.randint(100000, 999999))  # Generate OTP
         try:
             user = User.objects.create(firstName=data.get('firstName'), lastName=data.get('lastName'),
-                                       email=data.get('email'), username=data.get('username'), password=encrypted,
+                                       email=data.get('email').lower(), username=data.get('username'), password=encrypted,
                                        phone=data.get("phone"), )
             UserOTP.objects.create(otp=otp, user=user)
             # Send User OTP
@@ -111,7 +111,7 @@ class VerifyMail(APIView):
                 "status": "Bad Request",
                 "message": "OTP is required"
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        email = data.get('email')
+        email = data.get('email').lower()
         otp = data.get('otp')
 
         try:
@@ -168,7 +168,7 @@ class LoginView(APIView):
         raw_password = data.get('password')
         try:
             try:
-                user = User.objects.get(email=id)
+                user = User.objects.get(email=id.lower())
             except User.DoesNotExist:
                 try:
                     user = User.objects.get(username=id)
@@ -214,7 +214,7 @@ class SendOTP(APIView):
                 "status": "Bad Request",
                 "message": "Email is required"
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        email = data.get('email')
+        email = data.get('email').lower()
         otp = str(random.randint(100000, 999999))
         try:
             user = User.objects.get(email=email)
@@ -309,7 +309,7 @@ class BeginForgotPassword(APIView):
                 "status": "Bad Request",
                 "message": "Email is required"
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        email = data.get('email')
+        email = data.get('email').lower()
         try:
             user = User.objects.get(email=email)
         except  user.DoesNotExist:
@@ -806,7 +806,7 @@ class WalletPayment(APIView):
         description = data['description']or''
         try:
             try:
-                recipient_user = User.objects.get(Q(email=recipient) | Q(username=recipient))
+                recipient_user = User.objects.get(Q(email=recipient.lower()) | Q(username=recipient))
                 sender_user = User.objects.get(email=request.user.email)
                 if bcrypt.checkpw(pin.encode('utf-8'), sender_user.pin.encode('utf-8')):
                     if hasattr(sender_user, 'wallet'):
