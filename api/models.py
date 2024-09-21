@@ -23,7 +23,7 @@ class User(AbstractBaseUser):
     lastName = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=12, blank=True, null=True)
-    username = models.CharField(max_length=25, unique=True)
+    username = models.CharField(max_length=25, unique=True, null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
@@ -56,7 +56,7 @@ class UserOTP(models.Model):
     otp_created_at = models.DateTimeField(auto_now_add=True, null=True)
 
 class Account(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='account')
     bankCode = models.CharField(max_length=255)
     accountNumber = models.CharField(max_length=255)
     accountName = models.CharField(max_length=255)
@@ -89,7 +89,7 @@ class Transaction(models.Model):
         return f"{self.sender.email} to {self.receiver.email} on {self.date}"
 
 class Wallet(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wallet')
     balance = models.FloatField()
 
     def __str__(self):
@@ -100,7 +100,7 @@ class History(models.Model):
         ('CREDIT', 'CREDIT'),
         ("DEBIT", "DEBIT")
     ]
-    wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE)
+    wallet = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name='history')
     type = models.CharField(max_length=7, choices=TYPE)
     amount = models.FloatField()
     date = models.DateTimeField(auto_now_add=True, null=True)

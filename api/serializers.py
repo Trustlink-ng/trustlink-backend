@@ -9,7 +9,7 @@ class UserSerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Transaction
-        fields = '__all__'
+        fields = ['id','mode','sender','receiver','amount','description','date','status']
 
 class BankSerializer(serializers.ModelSerializer):
     class Meta:
