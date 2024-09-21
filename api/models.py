@@ -113,6 +113,22 @@ class Banks(models.Model):
     def __str__(self):
         return self.name
 
+class Dispute(models.Model):
+    STATUS_CHOICES = [
+        ('Pending', 'Pending'),
+        ('Resolved', 'Resolved'),
+    ]
+    transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='refund')
+    reason = models.CharField(max_length=300, null=True, blank=True)
+    evidence = models.ImageField(upload_to='images/', blank=True, null=True)
+    code= models.CharField(max_length=6)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='Pending')
+
+    def __str__(self):
+        return f"{self.transaction.sender} to {self.transaction.receiver}"
+
+
+
 
 
 

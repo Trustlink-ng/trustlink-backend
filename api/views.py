@@ -871,12 +871,12 @@ class VerifyPayment(APIView):
                             recipient.wallet.save()
                             transaction.status = 'Completed'
                             transaction.save()
-                            send_mail(f'Transaction {transaction.id}{transaction.date} has been completed!!',
+                            send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
                                       f'Your Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.',
                                       EMAIL_HOST_USER, [recipient.email], fail_silently=False)
-                            send_mail(f'Transaction {transaction.id}{transaction.date} has been completed!!',
+                            send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
                                       f"{recipient.email}'s Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.",
-                                      EMAIL_HOST_USER, [recipient.email], fail_silently=False)
+                                      EMAIL_HOST_USER, [transaction.sender.email], fail_silently=False)
                             return Response({
                                 "message":"Transaction Successful. Your wallet will be credited shortly",
                                 "data":TransactionSerializer(transaction).data
@@ -898,6 +898,113 @@ class VerifyPayment(APIView):
             return Response({
                 "message": f"Internal Server Error - {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class DisputeTransaction(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self,request,id):
+        data = request.data
+        if 'reason' not in data or not data.get('reason'):
+            return Response({
+                "status": "Bad Request",
+                "message": "Reason for Dispute is required"
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        reason = data['reason']
+        try:
+            try:
+                transaction = Transaction.objects.get(id=id)
+                user = User.objects.get(email=request.user.email)
+                if transaction.status == 'Pending':
+                    if transaction.sender == user:
+                        code = random.randint(1000, 9999)
+                        if data.get('proof'):
+                            dispute = Dispute.objects.create(
+                                transaction=transaction,
+                                reason=reason,
+                                code = code,
+                                evidence=data.get('proof')
+                            )
+                        else:
+                            dispute = Dispute.objects.create(
+                                transaction=transaction,
+                                reason=reason,
+                                code=code,
+                            )
+                        transaction.status = 'Cancelled'
+                        transaction.save()
+                        send_mail('Refund Requested!',
+                                  f'{user.email} has requested a refund of the sum of ₦{transaction.amount} of transaction {transaction.id}-{transaction.date}. With reason: \n"{dispute.reason}" \n\nShare the code ({code}) with them to approve refund',
+                                  EMAIL_HOST_USER, [transaction.receiver.email], fail_silently=False)
+                        send_mail('Refund Requested!',
+                                  f'Your refund request of transaction {transaction.id}-{transaction.date} has been sent to {transaction.receiver.email}. \n\nRetrieve approval code from them.',
+                                  EMAIL_HOST_USER, [user.email], fail_silently=False)
+                        return Response({
+                            "message":"Refund request successfully sent.",
+                            "data":DisputeSerializer(dispute).data
+                        }, status=status.HTTP_200_OK)
+                    return Response({
+                        "message":"You cannot request refund as you did not initiate transaction"
+                    },status=status.HTTP_401_UNAUTHORIZED)
+                return Response({
+                    "message":"Transaction as been resolved."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            except Transaction.DoesNotExist:
+                return Response({
+                    "message":f"Transaction with ID {id}does not exist"
+                }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                "message":f"Internal Server Error - {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def put(self, request, id):
+        data = request.data
+        if 'code' not in data or not data.get('code'):
+            return Response({
+                "status": "Bad Request",
+                "message": "Code is required"
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        code = data['code']
+        try:
+            try:
+                dispute = Dispute.objects.get(id=id)
+                recipient = User.objects.get(email=request.user.email)
+                if dispute.transaction.status == 'Cancelled':
+                    if dispute.transaction.sender == recipient:
+                        if code == dispute.code:
+                            recipient.wallet.balance =+ dispute.transaction.amount
+                            recipient.wallet.save()
+                            dispute.transaction.status = 'Refunded'
+                            dispute.transaction.save()
+                            dispute.status = "Resolved"
+                            dispute.save()
+                            send_mail(f'Transaction {dispute.transaction.id}-{dispute.transaction.date} Refund Successful!!',
+                                      f'Your Wallet has been credited with ₦{dispute.transaction.amount}. \n\nThank you for Trusting Trustlink.',
+                                      EMAIL_HOST_USER, [recipient.email], fail_silently=False)
+                            send_mail(f'Transaction {dispute.transaction.id}-{dispute.transaction.date} has been completed!!',
+                                      f"{recipient.email}'s Wallet has been credited with ₦{dispute.transaction.amount}. \n\nThank you for Trusting Trustlink.",
+                                      EMAIL_HOST_USER, [dispute.transaction.receiver.email], fail_silently=False)
+                            return Response({
+                                "message": "Transaction Successful. Your wallet will be credited shortly",
+                                "data": TransactionSerializer(dispute.transaction).data
+                            }, status=status.HTTP_200_OK)
+                        return Response({
+                            "message": "Invalid Verification Code."
+                        }, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({
+                        "message": "You do not have access to verify this transaction."
+                    }, status=status.HTTP_401_UNAUTHORIZED)
+                return Response({
+                    "message": "This Transaction has been resolved or refund has not been requested."
+                }, status=status.HTTP_400_BAD_REQUEST)
+            except Transaction.DoesNotExist:
+                return Response({
+                    "message": f"TDispute with id {id} not found"
+                }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({
+                "message": f"Internal Server Error - {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 
