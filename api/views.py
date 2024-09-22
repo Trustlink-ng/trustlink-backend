@@ -584,6 +584,11 @@ class WithdrawWallet(APIView):
                         payment = kora_payout(str(amount), str(account.bankCode), str(account.accountNumber),
                                               str(request.user.firstName), str(request.user.email))
                         if payment == 200:
+                            History.objects.create(
+                                wallet=wallet,
+                                type='DEBIT',
+                                amount = float(amount)
+                            )
                             return Response({
                                 "message": "Withdrawal Processsed Successfully. You will be credited shortly",
                                 "statusCode": 200
