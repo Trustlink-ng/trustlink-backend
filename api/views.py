@@ -822,6 +822,11 @@ class WalletPayment(APIView):
                                 amount = float(amount),
                                 code = code
                             )
+                            History.objects.create(
+                                wallet = sender_user.wallet,
+                                type = 'DEBIT',
+                                amount = amount,
+                            )
                             send_mail('A payment has been made!!',
                                       f'{sender_user.email} just sent you ₦{amount}. \n\nRetrieve code from them to complete transaction',
                                       EMAIL_HOST_USER, [recipient_user.email], fail_silently=False)
@@ -869,6 +874,11 @@ class VerifyPayment(APIView):
                         if code == transaction.code:
                             recipient.wallet.balance =+ transaction.amount
                             recipient.wallet.save()
+                            History.objects.create(
+                                wallet = recipient.wallet,
+                                type = 'CREDIT',
+                                amount = transaction.amount
+                            )
                             transaction.status = 'Completed'
                             transaction.save()
                             send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
@@ -977,6 +987,11 @@ class DisputeTransaction(APIView):
                             dispute.transaction.save()
                             dispute.status = "Resolved"
                             dispute.save()
+                            History.objects.create(
+                                wallet = recipient.wallet,
+                                type='CREDIT',
+                                amount = dispute.transaction.amount
+                            )
                             send_mail(f'Transaction {dispute.transaction.id}-{dispute.transaction.date} Refund Successful!!',
                                       f'Your Wallet has been credited with ₦{dispute.transaction.amount}. \n\nThank you for Trusting Trustlink.',
                                       EMAIL_HOST_USER, [recipient.email], fail_silently=False)
