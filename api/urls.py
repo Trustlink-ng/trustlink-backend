@@ -17,5 +17,7 @@ urlpatterns = [
     path('api/me', Users.as_view(), name="user"),
     path('api/wallet/pay', WalletPayment.as_view(), name='pay-with-wallet'),
     path('api/verify-transaction/<int:id>', VerifyPayment.as_view(), name="verify-payment"),
-    path('api/dispute-transaction/<int:id>', DisputeTransaction.as_view(), name="dispute-transaction")
+    path('api/dispute-transaction/<int:id>', DisputeTransaction.as_view(), name="dispute-transaction"),
+    path('api/outgoing/trans', OutgoingHistory.as_view(), name='outgoing-history'),
+    path('api/incoming/trans', IncomingHistory.as_view(), name='incoming-history')
 ]

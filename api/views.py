@@ -914,6 +914,18 @@ class VerifyPayment(APIView):
                 "message": f"Internal Server Error - {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    def get(self, request, id):
+        try:
+            dispute = Transaction.objects.get(id=id)
+            return Response({
+                "message":"Transaction retrieved successfully",
+                "data":TransactionSerializer(dispute).data
+            },status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message":f"Internal Server Error-{str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 class DisputeTransaction(APIView):
     permission_classes = [IsAuthenticated]
     def post(self,request,id):
@@ -1025,7 +1037,52 @@ class DisputeTransaction(APIView):
                 "message": f"Internal Server Error - {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    def get(self, request, id):
+        try:
+            dispute = Dispute.objects.get(id=id)
+            return Response({
+                "message":"Dispute retrieved successfully",
+                "data":DisputeSerializer(dispute).data
+            },status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message":f"Internal Server Error-{str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class OutgoingHistory(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        try:
+            user = User.objects.get(email=request.user.email)
+            transactions = user.sent_transactions.all()
+            status_query = request.query_params.get('status')
+            if status_query:
+                transactions = transactions.filter(status=status_query)
+            return Response({
+                "message": "Transactions retrieved successfully",
+                "data": TransactionSerializer(transactions, many=True).data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message": f"Internal Server Error - {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class IncomingHistory(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        try:
+            user = User.objects.get(email=request.user.email)
+            transactions = user.received_transactions.all()
+            status_query = request.query_params.get('status')
+            if status_query:
+                transactions = transactions.filter(status=status_query)
+            return Response({
+                "message": "Transactions retrieved successfully",
+                "data": TransactionSerializer(transactions, many=True).data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message": f"Internal Server Error - {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
