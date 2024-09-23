@@ -1085,4 +1085,34 @@ class IncomingHistory(APIView):
                 "message": f"Internal Server Error - {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class WalletHistory(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        user = request.user
+        try:
+            wallet = Wallet.objects.get(user=user)
+            return Response({
+                "message":"Wallet History retrieved successfully",
+                "data":HistorySerializer(wallet.history, many=True).data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "messsage":str(e),
+
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class SpecificHistory(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request,id):
+        try:
+            history = History.objects.get(id=id)
+            return Response({
+                "message":"Record retrieved successfully",
+                "data":HistorySerializer(history).data
+            }, status=status.HTTP_200_OK)
+        except History.DoesNotExist as e:
+            return Response({
+                "message":str(e)
+            }, status=status.HTTP_404_NOT_FOUND)
+
 

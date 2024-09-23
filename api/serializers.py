@@ -7,6 +7,8 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['firstName','lastName','email','phone', 'username']
 
 class TransactionSerializer(serializers.ModelSerializer):
+    sender = UserSerializer()
+    receiver = UserSerializer()
     class Meta:
         model = Transaction
         fields = ['id','mode','sender','receiver','amount','description','date','status']
@@ -29,3 +31,8 @@ class DisputeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dispute
         fields = ['transaction', 'reason', 'evidence']
+
+class HistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = History
+        fields = '__all__'
