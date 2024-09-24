@@ -1124,7 +1124,7 @@ class GeneralTransaction(APIView):
             transactions = Transaction.objects.filter(Q(sender = user)|Q(receiver=user))
             return Response({
                 "message":"Transactions retrieved successfully",
-                "data":TransactionSerializer(transactions, many=True).data
+                "data":TransactionSerializer(transactions, many=True, context={'request': request}).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({

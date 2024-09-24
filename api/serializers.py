@@ -9,9 +9,19 @@ class UserSerializer(serializers.ModelSerializer):
 class TransactionSerializer(serializers.ModelSerializer):
     sender = UserSerializer()
     receiver = UserSerializer()
+    type = serializers.SerializerMethodField()
     class Meta:
         model = Transaction
-        fields = ['id','mode','sender','receiver','amount','description','date','status']
+        fields = ['id','mode','sender','receiver','amount','description','date','status', 'type']
+
+    def get_type(self, obj):
+        request = self.context.get('request')  # Get the current user from the context
+        user = request.user
+        if obj.sender == user:
+            return "DEBIT"
+        elif obj.receiver == user:
+            return "CREDIT"
+        return None
 
 class BankSerializer(serializers.ModelSerializer):
     class Meta:
