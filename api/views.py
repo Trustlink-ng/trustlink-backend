@@ -858,7 +858,7 @@ class WalletPayment(APIView):
                                       EMAIL_HOST_USER, [sender_user.email], fail_silently=False)
                             return Response({
                                 "message": "Transaction initiated successfully",
-                                "data": TransactionSerializer(transaction).data
+                                "data": TransactionSerializer(transaction, context={'request': request}).data
                             }, status=status.HTTP_200_OK)
                         return Response({
                             "message": "Insufficient Balance",
@@ -914,7 +914,7 @@ class VerifyPayment(APIView):
                                       EMAIL_HOST_USER, [transaction.sender.email], fail_silently=False)
                             return Response({
                                 "message": "Transaction Successful. Your wallet will be credited shortly",
-                                "data": TransactionSerializer(transaction).data
+                                "data": TransactionSerializer(transaction, context={'request': request}).data
                             }, status=status.HTTP_200_OK)
                         return Response({
                             "message": "Invalid Verification Code."
@@ -939,7 +939,7 @@ class VerifyPayment(APIView):
             dispute = Transaction.objects.get(id=id)
             return Response({
                 "message": "Transaction retrieved successfully",
-                "data": TransactionSerializer(dispute).data
+                "data": TransactionSerializer(dispute, context={'request': request}).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
@@ -1041,7 +1041,7 @@ class DisputeTransaction(APIView):
                                 EMAIL_HOST_USER, [dispute.transaction.receiver.email], fail_silently=False)
                             return Response({
                                 "message": "Transaction Successful. Your wallet will be credited shortly",
-                                "data": TransactionSerializer(dispute.transaction).data
+                                "data": TransactionSerializer(dispute.transaction, context={'request': request}).data
                             }, status=status.HTTP_200_OK)
                         return Response({
                             "message": "Invalid Verification Code."
@@ -1086,7 +1086,7 @@ class OutgoingHistory(APIView):
                 transactions = transactions.filter(status=status_query)
             return Response({
                 "message": "Transactions retrieved successfully",
-                "data": TransactionSerializer(transactions, many=True).data
+                "data": TransactionSerializer(transactions, many=True, context={'request': request}).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
@@ -1106,7 +1106,7 @@ class IncomingHistory(APIView):
                 transactions = transactions.filter(status=status_query)
             return Response({
                 "message": "Transactions retrieved successfully",
-                "data": TransactionSerializer(transactions, many=True).data
+                "data": TransactionSerializer(transactions, many=True, context={'request': request}).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
@@ -1237,4 +1237,57 @@ class GeneratePayment(APIView):
             "data":response['data']
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
+# class PaymentRedirectAPIView(APIView):
+#     def get(self, request):
+#         reference = request.GET.get('reference')
+#         if not reference:
+#             return Response({
+#                 "status": "error",
+#                 "message": "Transaction reference not provided"
+#             }, status=status.HTTP_400_BAD_REQUEST)
+#
+#         # Call KoraPay API to verify transaction status using the reference
+#         url = f"https://api.korapay.com/api/v1/transactions/{reference}"
+#         headers = {
+#             "Authorization": f"Bearer {os.getenv('KORA_SECRET')}"
+#         }
+#
+#         try:
+#             response = requests.get(url, headers=headers)
+#             transaction_data = response.json()
+#
+#             if response.status_code == 200 and transaction_data['status'] == 'success':
+#                 id = int(transaction_data['metadata'].get('user_id'))
+#                 user = User.objects.get(pk=id)
+#                 try:
+#                     code = random.randint(1000, 9999)
+#                     transaction = Transaction.objects.create(
+#                         mode="KORA",
+#                         receiver=user,
+#                         description=transaction_data['data'].get('description'),
+#                         amount=float(transaction_data['data'].get('amount_paid')),
+#                         code=code
+#                     )
+#                     send_mail('A payment has been made!!',
+#                               f'{sender_user.email} just sent you ₦{amount}. \n\nRetrieve code from them to complete transaction',
+#                               EMAIL_HOST_USER, [recipient_user.email], fail_silently=False)
+#                     send_mail('Your wallet has just been debited',
+#                               f'You have just sent the sum of ₦{amount} to {recipient_user.email}. \n\nOnly give them the code({code}) when you are satisfied with your Purchase.',
+#                               EMAIL_HOST_USER, [sender_user.email], fail_silently=False)
+#                 return Response({
+#                     "message": "Transaction initiated successfully",
+#                     "data": TransactionSerializer(transaction).data
+#                 }, status=status.HTTP_200_OK)
+#             else:
+#                 # Return transaction failure details
+#                 return Response({
+#                     "status": "failed",
+#                     "message": "Transaction failed or incomplete",
+#                     "transaction": transaction_data
+#                 }, status=status.HTTP_400_BAD_REQUEST)
+#
+#         except Exception as e:
+#             return Response({
+#                 "status": "error",
+#                 "message": f"An error occurred: {str(e)}"
+#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
