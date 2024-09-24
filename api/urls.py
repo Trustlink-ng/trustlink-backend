@@ -21,5 +21,6 @@ urlpatterns = [
     path('api/outgoing/trans', OutgoingHistory.as_view(), name='outgoing-history'),
     path('api/incoming/trans', IncomingHistory.as_view(), name='incoming-history'),
     path('api/wallet/history', WalletHistory.as_view(), name='wallet-history'),
-    path('api/history/<int:id>', SpecificHistory.as_view(), name='specific-history')
+    path('api/history/<int:id>', SpecificHistory.as_view(), name='specific-history'),
+    path('api/trans/history', GeneralTransaction.as_view(), name='general=transaction')
 ]

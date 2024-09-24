@@ -1116,3 +1116,19 @@ class SpecificHistory(APIView):
             }, status=status.HTTP_404_NOT_FOUND)
 
 
+class GeneralTransaction(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        user= request.user
+        try:
+            transactions = Transaction.objects.filter(Q(sender = user)|Q(receiver=user))
+            return Response({
+                "message":"Transactions retrieved successfully",
+                "data":TransactionSerializer(transactions, many=True).data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message":str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
