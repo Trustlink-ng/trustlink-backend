@@ -190,3 +190,4 @@ KORA_SECRET = os.getenv('KORA_SECRET')
 
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = '/media/'
+ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')

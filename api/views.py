@@ -17,17 +17,22 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 import random
 from .serializers import *
-from trustlink.settings import EMAIL_HOST_USER, KORA_SECRET
-
+from trustlink.settings import EMAIL_HOST_USER, KORA_SECRET, ENCRYPTION_KEY
 load_dotenv()
-from django.db.models import Q
 from .models import *
-
+import hashlib
+import hmac
+from Crypto.Cipher import AES 
+from Crypto import Random 
+import base64
+from binascii import hexlify as hexa
+from django.db import transaction
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
     def post(self, request):
+        print(EMAIL_HOST_USER)
         data = request.data
-        # Validation of request Body
+        #Validation of request Body
         if not data.get('firstName') or not isinstance(data.get('firstName'), str):
             return Response({'errors': [{'field': "firstName", 'message': "firstName is required as string"}]},
                             status=status.HTTP_422_UNPROCESSABLE_ENTITY)
@@ -54,14 +59,14 @@ class RegisterView(APIView):
                 "message": "Email must be valid email",
                 "statusCode": 400
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        # Handle email Duplication
+        #Handle email Duplication
         if User.objects.filter(email=data.get('email')).exists():
             return Response({
                 "status": "Bad Request",
                 "message": "Email is taken. Proceed to verify email or Login.",
                 "statusCode": 400
             }, status=status.HTTP_400_BAD_REQUEST)
-        # Ensure username is Unique
+        #Ensure username is Unique
         if User.objects.filter(username=data.get('username')).exists():
             return Response({
                 "status": "Bad Request",
@@ -69,15 +74,14 @@ class RegisterView(APIView):
                 "statusCode": 400
             }, status=status.HTTP_400_BAD_REQUEST)
         password = data.get("password")
-        # Encrypt User Password
+        #Encrypt User Password
         encrypted = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        otp = str(random.randint(100000, 999999))  # Generate OTP
+        otp = str(random.randint(100000, 999999)) #Generate OTP
         try:
             user = User.objects.create(firstName=data.get('firstName'), lastName=data.get('lastName'),
-                                       email=data.get('email').lower(), username=data.get('username'), password=encrypted,
-                                       phone=data.get("phone"), )
+                                       email=data.get('email'), username=data.get('username'),password=encrypted, phone=data.get("phone"), )
             UserOTP.objects.create(otp=otp, user=user)
-            # Send User OTP
+            #Send User OTP
             send_mail('Welcome To Trustlink...Email Verification',
                       f'Your OTP code is {otp}',
                       EMAIL_HOST_USER, [user.email], fail_silently=False)
@@ -89,6 +93,7 @@ class RegisterView(APIView):
                 }
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
+            print(e)
             return Response({
                 "status": "Bad request",
                 "message": str(e),
@@ -111,7 +116,7 @@ class VerifyMail(APIView):
                 "status": "Bad Request",
                 "message": "OTP is required"
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        email = data.get('email').lower()
+        email = data.get('email')
         otp = data.get('otp')
 
         try:
@@ -148,7 +153,7 @@ class VerifyMail(APIView):
             }
         }, status=status.HTTP_200_OK)
 
-# User Login
+#User Login
 class LoginView(APIView):
     def post(self, request):
         data = request.data
@@ -168,7 +173,7 @@ class LoginView(APIView):
         raw_password = data.get('password')
         try:
             try:
-                user = User.objects.get(email=id.lower())
+                user = User.objects.get(email=id)
             except User.DoesNotExist:
                 try:
                     user = User.objects.get(username=id)
@@ -214,7 +219,7 @@ class SendOTP(APIView):
                 "status": "Bad Request",
                 "message": "Email is required"
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        email = data.get('email').lower()
+        email = data.get('email')
         otp = str(random.randint(100000, 999999))
         try:
             user = User.objects.get(email=email)
@@ -222,7 +227,7 @@ class SendOTP(APIView):
             if ava_otp:
                 if ava_otp.otp == None:
                     return Response({
-                        "message": "User has been verified. Proceed to login"
+                        "message":"User has been verified. Proceed to login"
                     })
                 else:
                     ava_otp.otp = otp
@@ -247,12 +252,11 @@ class SendOTP(APIView):
                 }, status=status.HTTP_201_CREATED)
         except User.DoesNotExist:
             return Response({
-                "message": "User email has not been registered"
+                "message":"User email has not been registered"
             })
 
 class ChangePassword(APIView):
     permission_classes = [IsAuthenticated]
-
     def post(self, request):
         data = request.data
         if 'old_password' not in data or not data.get('old_password'):
@@ -297,8 +301,8 @@ class ChangePassword(APIView):
         user.password = encrypted
         user.save()
         return Response({
-            "message": "Password Successfully Updated",
-            "statusCode": 200
+            "message":"Password Successfully Updated",
+            "statusCode":200
         }, status=status.HTTP_200_OK)
 
 class BeginForgotPassword(APIView):
@@ -309,13 +313,13 @@ class BeginForgotPassword(APIView):
                 "status": "Bad Request",
                 "message": "Email is required"
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        email = data.get('email').lower()
+        email = data.get('email')
         try:
             user = User.objects.get(email=email)
         except  user.DoesNotExist:
             return Response({
-                "message": "This email is not registered",
-                "status": 400
+                "message":"This email is not registered",
+                "status":400
             }, status=status.HTTP_400_BAD_REQUEST)
         refresh = RefreshToken.for_user(user)
         token = str(refresh.access_token)
@@ -331,7 +335,7 @@ class BeginForgotPassword(APIView):
         send_mail(subject, message, EMAIL_HOST_USER, [user.email])
 
         return Response({
-            "message": "Password reset link has been sent to your email",
+            "message":"Password reset link has been sent to your email",
             "status": 200,
         }, status=status.HTTP_200_OK)
 
@@ -355,8 +359,8 @@ class CompleteReset(APIView):
         confirm = data.get('confirm')
         if not token:
             return Response({
-                "message": "Token is missing",
-                "status": 400
+                "message":"Token is missing",
+                "status":400
             }, status=status.HTTP_400_BAD_REQUEST)
         try:
             access_token = AccessToken(token)
@@ -366,21 +370,21 @@ class CompleteReset(APIView):
 
             if new_password != confirm:
                 return Response({
-                    "message": "Passwords don't match",
-                    "status": 400
+                    "message":"Passwords don't match",
+                    "status":400
                 }, status=status.HTTP_400_BAD_REQUEST)
 
             encrypted = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             user.password = encrypted
             user.save()
             return Response({
-                "message": "Password Reset Successfully",
-                "status": 200
+                "message":"Password Reset Successfully",
+                "status":200
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
-                "message": str(e),
-                "statusCode": 500
+                "message":str(e),
+                "statusCode":500
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 # Extracting banks data from the Kora API and storing in our DB
@@ -402,31 +406,29 @@ def store_banks(request):
             for bank in banks.get('data', []):
                 Banks.objects.update_or_create(
                     name=bank['name'].strip,
-                    slug=bank['slug'],
-                    code=bank['code']
+                    slug = bank['slug'],
+                    code = bank['code']
                 )
             return JsonResponse(banks)
         except ValueError:
             return JsonResponse({"error": "Invalid JSON response"}, status=500)
     else:
         return JsonResponse({"error": f"Request failed with status code {response.status_code}"},
-                            status=response.status_code)
+                                status=response.status_code)
 
 class CreateAccount(APIView):
     def get(self, request):
         try:
             banks = Banks.objects.all()
             return Response({
-                "message": "Banks retrieved successfully.",
+                "message":"Banks retrieved successfully.",
                 "banks": BankSerializer(banks, many=True).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
                 "message": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     permission_classes = [IsAuthenticated]
-
     def post(self, request):
         data = request.data
         if 'code' not in data or not data.get('code'):
@@ -444,37 +446,34 @@ class CreateAccount(APIView):
         code = data['code']
         account_number = data['account_number']
         user = request.user
-        print(code, account_number, user)
+
         try:
             user_account = Account.objects.get(user=request.user)
             return Response({
-                "message": "You can only have one account saved. Edit it from settings",
-                "statusCode": 400
-            }, status=status.HTTP_400_BAD_REQUEST)
+                "message":"You can only have one account saved. Edit it from settings",
+                "statusCode":400
+            },status=status.HTTP_400_BAD_REQUEST)
         except Account.DoesNotExist:
             url = "https://api.korapay.com/merchant/api/v1/misc/banks/resolve"
             payload = json.dumps({
-                "bank": code,
-                "account": account_number
+                "bank":code,
+                "account":account_number
             })
             headers = {
                 'Content-Type': 'application/json'
             }
-            response = requests.request("POST", url, data=payload, headers=headers)
-            print(response.text)
+            response = requests.request("POST",url, data=payload, headers=headers)
             if response.status_code == 200:
-                details = response.json()
+                details =response.json()
                 dets = details.get('data')
-                user_account = Account.objects.create(user=user, bankCode=code, accountNumber=account_number,
-                                                      accountName=str(dets['account_name']))
+                user_account = Account.objects.create(user=user,bankCode=code, accountNumber=account_number, accountName=str(dets['account_name']))
                 return Response({
-                    "message": "Account saved successfully",
-                    "account details": AccountSerializer(user_account).data
+                    "message":"Account saved successfully",
+                    "account details":AccountSerializer(user_account).data
                 }, status=status.HTTP_201_CREATED)
             return Response({
-                "message": f"request error with error code {response.status_code}"
+                "message":f"request error with error code {response.status_code}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     def put(self, request):
         data = request.data
         if 'code' not in data or not data.get('code'):
@@ -495,7 +494,7 @@ class CreateAccount(APIView):
         print(code, account_number, user)
         try:
             user_account = Account.objects.get(user=request.user)
-            # Resolve Bank Account
+            #Resolve Bank Account
             url = "https://api.korapay.com/merchant/api/v1/misc/banks/resolve"
             payload = json.dumps({
                 "bank": code,
@@ -509,7 +508,7 @@ class CreateAccount(APIView):
             if response.status_code == 200:
                 details = response.json()
                 dets = details.get('data')
-                user_account.accountNumber = account_number
+                user_account.accountNumber=account_number
                 user_account.bankCode = code
                 user_account.accountName = str(dets['account_name'])
                 user_account.save()
@@ -522,14 +521,14 @@ class CreateAccount(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Account.DoesNotExist:
             return Response({
-                "message": "You do not have any account saved"
-            }, status=status.HTTP_404_NOT_FOUND)
+                "message":"You do not have any account saved"
+            },status=status.HTTP_404_NOT_FOUND)
 
 def kora_payout(amount, bank, account, name, email):
     url = "https://api.korapay.com/merchant/api/v1/transactions/disburse"
 
     payload = json.dumps({
-        "reference": f"pay-{name}-{str(uuid.uuid4())}",
+        "reference": "your-uniq-reference-001",
         "destination": {
             "type": "bank_account",
             "amount": amount,
@@ -552,13 +551,12 @@ def kora_payout(amount, bank, account, name, email):
 
     response = requests.request("POST", url, headers=headers, data=payload)
     result = response.json()
-    print("payload:", payload)
-    print("response:", response.text)
+    print("payload:",payload)
+    print("response:",response.text)
     return response.status_code
 
 class WithdrawWallet(APIView):
     permission_classes = [IsAuthenticated]
-
     def post(self, request):
         data = request.data
         if 'amount' not in data or not data.get('amount'):
@@ -578,34 +576,28 @@ class WithdrawWallet(APIView):
         try:
             wallet = Wallet.objects.get(user=request.user)
             try:
-                account = Account.objects.get(user=request.user)
+                account = Account.objects.get(user= request.user)
                 if bcrypt.checkpw(pin.encode('utf-8'), account.user.pin.encode('utf-8')):
                     if wallet.balance - float(amount) >= 100:
-                        payment = kora_payout(str(amount), str(account.bankCode), str(account.accountNumber),
-                                              str(request.user.firstName), str(request.user.email))
+                        payment = kora_payout(str(amount),str(account.bankCode), str(account.accountNumber),str(request.user.firstName),str(request.user.email))
                         if payment == 200:
-                            History.objects.create(
-                                wallet=wallet,
-                                type='DEBIT',
-                                amount = float(amount)
-                            )
                             return Response({
-                                "message": "Withdrawal Processsed Successfully. You will be credited shortly",
-                                "statusCode": 200
+                                "message":"Withdrawal Processsed Successfully. You will be credited shortly",
+                                "statusCode":200
                             }, status=status.HTTP_200_OK)
                         return Response({
-                            "message": f"Request failed with status code {payment}"
+                            "message":f"Request failed with status code {payment}"
                         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     return Response({
-                        "message": "Insufficient wallet balance",
-                        "statusCode": 400
+                        "message":"Insufficient wallet balance",
+                        "statusCode":400
                     }, status=status.HTTP_400_BAD_REQUEST)
                 return Response({
-                    "message": "Incorrect Transaction Pin"
+                    "message":"Incorrect Transaction Pin"
                 }, status=status.HTTP_401_UNAUTHORIZED)
             except Account.DoesNotExist:
                 return Response({
-                    "message": "Account details not found"
+                    "message":"Account details not found"
                 }, status=status.HTTP_404_NOT_FOUND)
         except Wallet.DoesNotExist:
             return Response({
@@ -614,28 +606,27 @@ class WithdrawWallet(APIView):
 
 class CreateWallet(APIView):
     permission_classes = [IsAuthenticated]
-
     def post(self, request):
         data = request.data
         if 'pin' not in data:
             return Response({
                 'message': 'Pin is required to create a wallet',
                 'statusCode': 422
-            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-
+            }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
         if not isinstance(data['pin'], str) or not len(data['pin']) == 4:
             return Response({
-                'message': 'Pin is required as a 4-digit string',
-                'statusCode': 422
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         try:
             int(data['pin'])
         except ValueError:
             return Response({
-                'message': 'Pin is required as a 4-digit string',
-                'statusCode': 422
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        if Wallet.objects.filter(user=request.user).exists():
+        if Wallet.objects.filter(user = request.user).exists():
             return Response({
                 'message': 'Wallet already exists',
                 'statusCode': 400
@@ -644,16 +635,15 @@ class CreateWallet(APIView):
             encrypted_pin = bcrypt.hashpw(data['pin'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             request.user.pin = encrypted_pin
             request.user.save()
-            Wallet.objects.create(user=request.user, balance=0)
+            Wallet.objects.create(user= request.user, balance = 0)
             return Response({
-                'message': 'Wallet created successfully',
-                'statusCode': 201
+                'message' : 'Wallet created successfully',
+                'statusCode' : 201
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({
                 "message": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
     def put(self, request):
         data = request.data
         if 'old_pin' not in data or not data.get('old_pin'):
@@ -703,432 +693,363 @@ class CreateWallet(APIView):
         }, status=status.HTTP_200_OK)
 
     def get(self, request):
-        user = request.user
+        user= request.user
         try:
-            wallet = Wallet.objects.get(user=user)
+            wallet =  Wallet.objects.get(user=user)
             return Response({
-                "message": "Wallet retrieved successfully",
-                "wallet": WalletSerializer(wallet).data
+                "message":"Wallet retrieved successfully",
+                "wallet":WalletSerializer(wallet).data
             }, status=status.HTTP_200_OK)
         except Wallet.DoesNotExist:
             return Response({
-                "message": "Wallet does not exist"
+                "message":"Wallet does not exist"
             }, status=status.HTTP_404_NOT_FOUND)
+
+def bank_pay(amount, user):
+    url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
+    payload = json.dumps({
+    "reference": f"deposit-{user.id}-{str(uuid.uuid4())}", #unique reference for each deposit
+    "amount": f'{amount}',
+    "currency": "NGN",
+    "customer": {
+        'name': f'{user.firstName} {user.lastName}',
+    	"email": f'{user.email}'
+        },
+    # 'notification_url' : '' #webhook kora calls on success
+    })
+    headers = {
+        'Authorization': f'Bearer {KORA_SECRET}',
+        'Content-Type' : 'application/json'
+    }
+    response = requests.post(url=url, data=payload, headers= headers)
+    return response.json(), response.status_code
 
 class BankTransferDeposit(APIView):
     permission_classes = [IsAuthenticated]
-
     def post(self, request):
-        user = request.user
+        user= request.user
         data = request.data
         if not data.get('amount'):
             return Response({
-                'message': 'Amount is required',
+                'message' :'Amount is required',
                 'statusCode': 422
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-
+        
         try:
             float(data['amount'])
         except ValueError:
             return Response({
-                'message': 'Amount is required as an integer or float',
+                'message' :'Amount is required as an integer or float',
                 'statusCode': 422
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
-        payload = json.dumps({
-            "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",  # unique reference for each deposit
-            "amount": data['amount'],
-            "currency": "NGN",
-            "customer": {
-                'name': f'{user.firstName} {user.lastName}',
-                "email": f'{user.email}'
-            },
-            # 'notification_url' : '' #webhook kora calls on success
-        })
-        headers = {
-            'Authorization': f'Bearer {KORA_SECRET}',
-            'Content-Type': 'application/json'
-        }
-        response = requests.post(url=url, data=payload, headers=headers)
-        if response.status_code == 200:
-            data = response.json()['data']['bank_account']
+        response, status_code = bank_pay(amount=data['amount'], user=user)
+        if status_code == 200: 
+            data = response['data']['bank_account']
             data['statusCode'] = 200
             return Response(data, status=status.HTTP_200_OK)
         else:
             data = response.json()
             data['statusCode'] = response.status_code
-            return Response(data, status=response.status_code)
+            return Response(data, status= response.status_code)
 
 class KoraWebhook(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # Check if the request is a POST
-        if 'HTTP_X_KORAPAY_SIGNATURE' not in request.headers:
+        # Check if 'X-KORAPAY-SIGNATURE' header exists in the request
+        if 'X-KORAPAY-SIGNATURE' not in request.headers:
             return Response({'error': 'Invalid request'}, status=400)
 
-        # Get the request body and signature
-        request_body = json.loads(request.body)
-        webhook_signature = request.headers['HTTP_X_KORAPAY_SIGNATURE']
+        request_body = json.loads(request.body.decode('utf-8'))
+        webhook_signature = request.headers['X-KORAPAY-SIGNATURE']
+
+        expected_signature = hmac.new(
+            KORA_SECRET.encode('utf-8'),
+            json.dumps(request_body['data'], separators=(',', ':')).encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+
+        # Compare signatures to validate the request
+        if webhook_signature != expected_signature:
+            return Response({'error': 'Invalid signature'}, status=400)
+        try:
+            with transaction.atomic():
+                user_id = request_body['data']['payment_reference'].split('-')[1]
+                user = User.objects.get(id = user_id)
+                wallet = Wallet.objects.get(user= user)
+                wallet.balance += float(request_body['data']['amount'])
+                wallet.save()
+                History.objects.create(
+                    type = 'CREDIT',
+                    wallet = wallet,
+                    amount = request_body['data']['amount']
+                )
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=404)
+        except Wallet.DoesNotExist:
+            return Response({'error': 'Wallet not found'}, status=404)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+        
+        return Response({'status': 'success'}, status=200)
 
 class Users(APIView):
     permission_classes = [IsAuthenticated]
-
     def get(self, request):
         try:
             user = User.objects.get(id=request.user.id)
             return Response({
-                "message": "User retrieved Successfully",
-                "data": UserSerializer(user).data
+                "message":"User retrieved Successfully",
+                "data":UserSerializer(user).data
             }, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({
-                "message": "User not found",
+                "message":"User not found",
             }, status=status.HTTP_404_NOT_FOUND)
 
-class WalletPayment(APIView):
+class CreateWallet(APIView):
     permission_classes = [IsAuthenticated]
     def post(self, request):
         data = request.data
-        if 'amount' not in data or not data.get('amount'):
+        if 'pin' not in data:
             return Response({
-                "status": "Bad Request",
-                "message": "amount is required"
-            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        if 'recipient' not in data or not data.get('recipient'):
+                'message': 'Pin is required to create a wallet',
+                'statusCode': 422
+            }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        if not isinstance(data['pin'], str) or not len(data['pin']) == 4:
             return Response({
-                "status": "Bad Request",
-                "message": "No recipient indicated"
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        if 'pin' not in data or not data.get('pin'):
-            return Response({
-                "status": "Bad Request",
-                "message": "Pin is required"
-            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        amount = data['amount']
-        recipient = data['recipient']
-        pin = data['pin']
-        description = data['description']or''
         try:
-            try:
-                recipient_user = User.objects.get(Q(email=recipient.lower()) | Q(username=recipient))
-                sender_user = User.objects.get(email=request.user.email)
-                if bcrypt.checkpw(pin.encode('utf-8'), sender_user.pin.encode('utf-8')):
-                    if hasattr(sender_user, 'wallet'):
-                        if sender_user.wallet.balance - float(amount) >= 100:
-                            sender_user.wallet.balance = sender_user.wallet.balance - float(amount)
-                            sender_user.wallet.save()
-                            code = random.randint(1000, 9999)
-                            transaction = Transaction.objects.create(
-                                mode="Wallet",
-                                sender = sender_user,
-                                receiver= recipient_user,
-                                description = description,
-                                amount = float(amount),
-                                code = code
-                            )
-                            History.objects.create(
-                                wallet = sender_user.wallet,
-                                type = 'DEBIT',
-                                amount = amount,
-                            )
-                            send_mail('A payment has been made!!',
-                                      f'{sender_user.email} just sent you ₦{amount}. \n\nRetrieve code from them to complete transaction',
-                                      EMAIL_HOST_USER, [recipient_user.email], fail_silently=False)
-                            send_mail('Your wallet has just been debited',
-                                      f'You have just sent the sum of ₦{amount} to {recipient_user.email}. \n\nOnly give them the code({code}) when you are satisfied with your Purchase.',
-                                      EMAIL_HOST_USER, [sender_user.email], fail_silently=False)
-                            return Response({
-                                "message":"Transaction initiated successfully",
-                                "data":TransactionSerializer(transaction).data
-                            }, status=status.HTTP_200_OK)
-                        return Response({
-                            "message": "Insufficient Balance",
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                    return Response({
-                        "message": "User wallet Not found",
-                    }, status=status.HTTP_404_NOT_FOUND)
-                return Response({
-                    "message": "Incorrect transaction pin",
-                }, status=status.HTTP_401_UNAUTHORIZED)
-            except User.DoesNotExist:
-                return Response({
-                    "message": "Recipient Not Found, please confirm recipients details",
-                }, status=status.HTTP_404_NOT_FOUND)
+            int(data['pin'])
+        except ValueError:
+            return Response({
+                'message' : 'Pin is required as a 4-digit string',
+                'statusCode' : 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if Wallet.objects.filter(user = request.user).exists():
+            return Response({
+                'message': 'Wallet already exists',
+                'statusCode': 400
+            }, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            encrypted_pin = bcrypt.hashpw(data['pin'].encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            request.user.pin = encrypted_pin
+            request.user.save()
+            Wallet.objects.create(user= request.user, balance = 0)
+            return Response({
+                'message' : 'Wallet created successfully',
+                'statusCode' : 201
+            }, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({
-                "message":f"Internal Server Error-{str(e)}"
+                "message": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class VerifyPayment(APIView):
+def encryption_charge(encryptionKey, paymentData):
+    try:
+        iv = Random.get_random_bytes(16)
+        encObj = AES.new(encryptionKey.encode("utf8"), AES.MODE_GCM, iv)
+        cipherText,authTag = encObj.encrypt_and_digest(paymentData.encode("utf8"))
+        iv64 = base64.b64encode(iv).decode('ascii')
+        ivToHex = hexa(iv).decode()
+        cipherTextToHex = hexa(cipherText).decode()
+        authTagToHex = hexa(authTag).decode()
+        result = ivToHex + ":" + cipherTextToHex + ":" + authTagToHex
+        data = json.dumps({
+        'charge_data': result
+        })
+        response, status_code = charge_card(data)
+        return response, status_code
+    
+    except Exception as e:
+        print(e)
+
+def charge_card(data):
+    url =  'https://api.korapay.com/merchant/api/v1/charges/card'
+    
+    header = {
+        'Authorization': f'Bearer {KORA_SECRET}',
+        'Content-Type' : 'application/json'
+    }
+    response = requests.post(url=url, data= data, headers=header)
+    print(response.text)
+
+    return response.json(), response.status_code
+
+class CardDeposit(APIView):
     permission_classes = [IsAuthenticated]
-    def post(self, request,id):
+    def post(self, request):
         data = request.data
-        if 'code' not in data or not data.get('code'):
-            return Response({
-                "status": "Bad Request",
-                "message": "Code is required"
-            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        code = data['code']
-        try:
-            try:
-                transaction = Transaction.objects.get(id=id)
-                recipient = User.objects.get(email=request.user.email)
-                if transaction.status == 'Pending':
-                    if transaction.receiver == recipient:
-                        if code == transaction.code:
-                            recipient.wallet.balance =+ transaction.amount
-                            recipient.wallet.save()
-                            History.objects.create(
-                                wallet = recipient.wallet,
-                                type = 'CREDIT',
-                                amount = transaction.amount
-                            )
-                            transaction.status = 'Completed'
-                            transaction.save()
-                            send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
-                                      f'Your Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.',
-                                      EMAIL_HOST_USER, [recipient.email], fail_silently=False)
-                            send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
-                                      f"{recipient.email}'s Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.",
-                                      EMAIL_HOST_USER, [transaction.sender.email], fail_silently=False)
-                            return Response({
-                                "message":"Transaction Successful. Your wallet will be credited shortly",
-                                "data":TransactionSerializer(transaction).data
-                            }, status=status.HTTP_200_OK)
-                        return Response({
-                            "message":"Invalid Verification Code."
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                    return Response({
-                        "message": "You do not have access to verify this transaction."
-                    }, status=status.HTTP_401_UNAUTHORIZED)
-                return Response({
-                    "message":"This Transaction has been resolved."
-                }, status=status.HTTP_400_BAD_REQUEST)
-            except Transaction.DoesNotExist:
-                return Response({
-                    "message": f"Transaction with id {id} not found"
-                }, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({
-                "message": f"Internal Server Error - {str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def get(self, request, id):
-        try:
-            dispute = Transaction.objects.get(id=id)
-            return Response({
-                "message":"Transaction retrieved successfully",
-                "data":TransactionSerializer(dispute).data
-            },status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({
-                "message":f"Internal Server Error-{str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class DisputeTransaction(APIView):
-    permission_classes = [IsAuthenticated]
-    def post(self,request,id):
-        data = request.data
-        if 'reason' not in data or not data.get('reason'):
-            return Response({
-                "status": "Bad Request",
-                "message": "Reason for Dispute is required"
-            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        reason = data['reason']
-        try:
-            try:
-                transaction = Transaction.objects.get(id=id)
-                user = User.objects.get(email=request.user.email)
-                if transaction.status == 'Pending':
-                    if transaction.sender == user:
-                        code = random.randint(1000, 9999)
-                        if data.get('proof'):
-                            dispute = Dispute.objects.create(
-                                transaction=transaction,
-                                reason=reason,
-                                code = code,
-                                evidence=data.get('proof')
-                            )
-                        else:
-                            dispute = Dispute.objects.create(
-                                transaction=transaction,
-                                reason=reason,
-                                code=code,
-                            )
-                        transaction.status = 'Cancelled'
-                        transaction.save()
-                        send_mail('Refund Requested!',
-                                  f'{user.email} has requested a refund of the sum of ₦{transaction.amount} of transaction {transaction.id}-{transaction.date}. With reason: \n"{dispute.reason}" \n\nShare the code ({code}) with them to approve refund',
-                                  EMAIL_HOST_USER, [transaction.receiver.email], fail_silently=False)
-                        send_mail('Refund Requested!',
-                                  f'Your refund request of transaction {transaction.id}-{transaction.date} has been sent to {transaction.receiver.email}. \n\nRetrieve approval code from them.',
-                                  EMAIL_HOST_USER, [user.email], fail_silently=False)
-                        return Response({
-                            "message":"Refund request successfully sent.",
-                            "data":DisputeSerializer(dispute).data
-                        }, status=status.HTTP_200_OK)
-                    return Response({
-                        "message":"You cannot request refund as you did not initiate transaction"
-                    },status=status.HTTP_401_UNAUTHORIZED)
-                return Response({
-                    "message":"Transaction as been resolved."
-                }, status=status.HTTP_400_BAD_REQUEST)
-            except Transaction.DoesNotExist:
-                return Response({
-                    "message":f"Transaction with ID {id}does not exist"
-                }, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({
-                "message":f"Internal Server Error - {str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def put(self, request, id):
-        data = request.data
-        if 'code' not in data or not data.get('code'):
-            return Response({
-                "status": "Bad Request",
-                "message": "Code is required"
-            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        code = data['code']
-        try:
-            try:
-                dispute = Dispute.objects.get(id=id)
-                recipient = User.objects.get(email=request.user.email)
-                if dispute.transaction.status == 'Cancelled':
-                    if dispute.transaction.sender == recipient:
-                        if code == dispute.code:
-                            recipient.wallet.balance =+ dispute.transaction.amount
-                            recipient.wallet.save()
-                            dispute.transaction.status = 'Refunded'
-                            dispute.transaction.save()
-                            dispute.status = "Resolved"
-                            dispute.save()
-                            History.objects.create(
-                                wallet = recipient.wallet,
-                                type='CREDIT',
-                                amount = dispute.transaction.amount
-                            )
-                            send_mail(f'Transaction {dispute.transaction.id}-{dispute.transaction.date} Refund Successful!!',
-                                      f'Your Wallet has been credited with ₦{dispute.transaction.amount}. \n\nThank you for Trusting Trustlink.',
-                                      EMAIL_HOST_USER, [recipient.email], fail_silently=False)
-                            send_mail(f'Transaction {dispute.transaction.id}-{dispute.transaction.date} has been completed!!',
-                                      f"{recipient.email}'s Wallet has been credited with ₦{dispute.transaction.amount}. \n\nThank you for Trusting Trustlink.",
-                                      EMAIL_HOST_USER, [dispute.transaction.receiver.email], fail_silently=False)
-                            return Response({
-                                "message": "Transaction Successful. Your wallet will be credited shortly",
-                                "data": TransactionSerializer(dispute.transaction).data
-                            }, status=status.HTTP_200_OK)
-                        return Response({
-                            "message": "Invalid Verification Code."
-                        }, status=status.HTTP_400_BAD_REQUEST)
-                    return Response({
-                        "message": "You do not have access to verify this transaction."
-                    }, status=status.HTTP_401_UNAUTHORIZED)
-                return Response({
-                    "message": "This Transaction has been resolved or refund has not been requested."
-                }, status=status.HTTP_400_BAD_REQUEST)
-            except Transaction.DoesNotExist:
-                return Response({
-                    "message": f"TDispute with id {id} not found"
-                }, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            return Response({
-                "message": f"Internal Server Error - {str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    def get(self, request, id):
-        try:
-            dispute = Dispute.objects.get(id=id)
-            return Response({
-                "message":"Dispute retrieved successfully",
-                "data":DisputeSerializer(dispute).data
-            },status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({
-                "message":f"Internal Server Error-{str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class OutgoingHistory(APIView):
-    permission_classes = [IsAuthenticated]
-    def get(self, request):
-        try:
-            user = User.objects.get(email=request.user.email)
-            transactions = user.sent_transactions.all()
-            status_query = request.query_params.get('status')
-            if status_query:
-                transactions = transactions.filter(status=status_query)
-            return Response({
-                "message": "Transactions retrieved successfully",
-                "data": TransactionSerializer(transactions, many=True).data
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({
-                "message": f"Internal Server Error - {str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class IncomingHistory(APIView):
-    permission_classes = [IsAuthenticated]
-    def get(self, request):
-        try:
-            user = User.objects.get(email=request.user.email)
-            transactions = user.received_transactions.all()
-            status_query = request.query_params.get('status')
-            if status_query:
-                transactions = transactions.filter(status=status_query)
-            return Response({
-                "message": "Transactions retrieved successfully",
-                "data": TransactionSerializer(transactions, many=True).data
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({
-                "message": f"Internal Server Error - {str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class WalletHistory(APIView):
-    permission_classes = [IsAuthenticated]
-    def get(self, request):
         user = request.user
-        try:
-            wallet = Wallet.objects.get(user=user)
+        if 'number' not in data :
             return Response({
-                "message":"Wallet History retrieved successfully",
-                "data":HistorySerializer(wallet.history, many=True).data
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
+                'message': 'Card number is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'cvv' not in data :
             return Response({
-                "messsage":str(e),
-
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class SpecificHistory(APIView):
-    permission_classes = [IsAuthenticated]
-    def get(self, request,id):
-        try:
-            history = History.objects.get(id=id)
+                'message': 'Cvv is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'expiry_month' not in data :
             return Response({
-                "message":"Record retrieved successfully",
-                "data":HistorySerializer(history).data
-            }, status=status.HTTP_200_OK)
-        except History.DoesNotExist as e:
+                'message': 'Expiry month is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'expiry_year' not in data :
             return Response({
-                "message":str(e)
-            }, status=status.HTTP_404_NOT_FOUND)
-
-
-class GeneralTransaction(APIView):
-    permission_classes = [IsAuthenticated]
-    def get(self, request):
-        user= request.user
-        try:
-            transactions = Transaction.objects.filter(Q(sender = user)|Q(receiver=user))
+                'message': 'Expiry year is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        if 'amount' not in data:
             return Response({
-                "message":"Transactions retrieved successfully",
-                "data":TransactionSerializer(transactions, many=True, context={'request': request}).data
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
+                'message': 'Amount is required',
+                'statusCode': 422
+            }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        
+        payload = json.dumps({
+            "reference": f"deposit-{user.id}-{str(uuid.uuid4())}", 
+            "card": {
+                "number": data['number'],
+                "cvv": data['cvv'],
+                "expiry_month":data['expiry_month'],
+                "expiry_year": data['expiry_year']
+                },
+            "amount": data['amount'],
+            "currency": "NGN",
+            "customer": {
+                "name":  f'{user.firstName} {user.lastName}',
+                "email": user.email
+            },
+
+        })
+        # data["redirect_url"] = "https://merchant-redirect-url.com",
+        response, status_code= encryption_charge(encryptionKey=ENCRYPTION_KEY, paymentData=payload)
+        if status_code == 200:
+            transaction_reference = response['data']['transaction_reference']
+            if 'auth_model' not in response['data'] or  response['data'].get('auth_model') == 'NO_AUTH':
+                return Response(response['data'], status=status_code)
+            print(response['data']['auth_model'])
+            if response['data']['auth_model'] != 'NO_AUTH':
+                if response['data']['auth_model'] == 'PIN':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'PIN required',
+                        'required fields': ['pin']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == 'OTP':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'OTP required',
+                        'required fields': ['otp']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == '3DS':
+                    return Response({
+                        'redirect_url': response['data']['redirect_url']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == 'AVS':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'AVS requuired',
+                        'Required fields': ['state', 'city', 'country', 'address', 'zip_code']
+                    })
+        else:
+            return Response(response['data'], status=status_code)
+
+class CardAuth(APIView):
+    def post(self, request):
+        auth_type = request.GET['type'].strip().lower()
+        data = request.data
+        if 'transaction_reference' not in  data:
             return Response({
-                "message":str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                'message': 'Transaction reference is required'
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        payload= {'transaction_reference': data['transaction_reference']}
+        
+        if auth_type == 'otp':
+            if 'otp' not in data :
+                print(2)
+                return Response({
+                    'message': 'OTP is required'
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
+            else:
+                try:
+                    int(data['otp'])
+                except ValueError:
+                    return Response({
+                        'message': 'OTP is not a numerical value'
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
+                payload['authorization'] = {
+                    'otp': data['otp']
+                }
+        elif auth_type == 'pin':
+            if 'pin' not in data :
+                return Response({
+                    'message': 'Pin is required'
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+            else:
+                try:
+                    int(data['pin'])
+                    payload['authorization'] = {
+                    'pin': data['pin']
+                    }
+                except ValueError:
+                    return Response({
+                        'message': 'Pin is not a numerical value'
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        elif auth_type == 'AVS':
+            if 'state' not in data:
+                return Response({
+                    'message': 'State must be included in request body',
+                }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if 'city' not in data:
+                return Response({
+                    'message': 'City must be included in request body',
+                }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if 'country' not in data:
+                return Response({
+                    'message': 'Country must be included in request body',
+                }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if 'address' not in data:
+                return Response({
+                    'message': 'Address must be included in request body',
+                }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if 'zip_code' not in data:
+                return Response({
+                    'message': 'Zip code must be included in request body',
+                }, status= status.HTTP_422_UNPROCESSABLE_ENTITY)
+            payload['authorization']={
+                'avs':{
+                'state': data['state'],
+                'city': data['city'],
+                'country': data['country'],
+                'address': data['address'],
+                'zip_code': data['zip_code']
+            }}
+        payload = json.dumps(payload)
+        print(payload)
+        response, status_code = card_auth(payload)
+        if status_code == 200:
+            return Response(response['data'], status=status.HTTP_200_OK)
+        else:
+            return Response(response['data'], status = status_code)
+        
+def card_auth(data):
+    url = 'https://api.korapay.com/merchant/api/v1/charges/card/authorize'
+    header = {
+        'Authorization': f'Bearer {KORA_SECRET}',
+        'Content-Type' : 'application/json'
+    }
+    response = requests.post(url=url, data= data, headers=header)
+    print(response.json())
+    return response.json(), response.status_code
+
+                
+        
+
+        
+        
