@@ -24,5 +24,8 @@ urlpatterns = [
     path('api/history/<int:id>', SpecificHistory.as_view(), name='specific-history'),
     path('api/trans/history', GeneralTransaction.as_view(), name='general=transaction'),
     path('api/generate', GeneratePayment.as_view(), name="generate-payment"),
-    path('api/checkout', PaymentRedirectAPIView.as_view(), name="payment-redirect")
+    path('api/checkout', PaymentRedirectAPIView.as_view(), name="payment-redirect"),
+    path('api/deposit/card', CardDeposit.as_view(), name='card-deposit'),
+    path('api/card-auth', CardAuth.as_view(), name='card-auth'),
+    path('api/webhook', KoraWebhook.as_view(), name='webhook')
 ]

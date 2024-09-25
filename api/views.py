@@ -1,6 +1,11 @@
+import base64
+import hashlib
+import hmac
 import json
 import os
 import uuid
+
+from django.db import transaction
 from django.http import JsonResponse
 from dotenv import load_dotenv
 import bcrypt
@@ -18,11 +23,12 @@ from django.core.exceptions import ValidationError
 import random
 from .serializers import *
 from trustlink.settings import EMAIL_HOST_USER, KORA_SECRET
-
+from Crypto.Cipher import AES
+from Crypto import Random
 load_dotenv()
 from django.db.models import Q
 from .models import *
-
+from binascii import hexlify as hexa
 
 # This endpoint handles the user signup part.
 class RegisterView(APIView):
@@ -730,6 +736,50 @@ class CreateWallet(APIView):
             }, status=status.HTTP_404_NOT_FOUND)
 
 
+# class BankTransferDeposit(APIView):
+#     permission_classes = [IsAuthenticated]
+#
+#     def post(self, request):
+#         user = request.user
+#         data = request.data
+#         if not data.get('amount'):
+#             return Response({
+#                 'message': 'Amount is required',
+#                 'statusCode': 422
+#             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+#
+#         try:
+#             float(data['amount'])
+#         except ValueError:
+#             return Response({
+#                 'message': 'Amount is required as an integer or float',
+#                 'statusCode': 422
+#             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+#         url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
+#         payload = json.dumps({
+#             "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",  # unique reference for each deposit
+#             "amount": data['amount'],
+#             "currency": "NGN",
+#             "customer": {
+#                 'name': f'{user.firstName} {user.lastName}',
+#                 "email": f'{user.email}'
+#             },
+#             # 'notification_url' : '' #webhook kora calls on success
+#         })
+#         headers = {
+#             'Authorization': f'Bearer {KORA_SECRET}',
+#             'Content-Type': 'application/json'
+#         }
+#         response = requests.post(url=url, data=payload, headers=headers)
+#         if response.status_code == 200:
+#             data = response.json()['data']['bank_account']
+#             data['statusCode'] = 200
+#             return Response(data, status=status.HTTP_200_OK)
+#         else:
+#             data = response.json()
+#             data['statusCode'] = response.status_code
+#             return Response(data, status=response.status_code)
+
 class BankTransferDeposit(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -749,24 +799,9 @@ class BankTransferDeposit(APIView):
                 'message': 'Amount is required as an integer or float',
                 'statusCode': 422
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
-        payload = json.dumps({
-            "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",  # unique reference for each deposit
-            "amount": data['amount'],
-            "currency": "NGN",
-            "customer": {
-                'name': f'{user.firstName} {user.lastName}',
-                "email": f'{user.email}'
-            },
-            # 'notification_url' : '' #webhook kora calls on success
-        })
-        headers = {
-            'Authorization': f'Bearer {KORA_SECRET}',
-            'Content-Type': 'application/json'
-        }
-        response = requests.post(url=url, data=payload, headers=headers)
-        if response.status_code == 200:
-            data = response.json()['data']['bank_account']
+        response, status_code = bank_pay(amount=data['amount'], user=user)
+        if status_code == 200:
+            data = response['data']['bank_account']
             data['statusCode'] = 200
             return Response(data, status=status.HTTP_200_OK)
         else:
@@ -775,17 +810,58 @@ class BankTransferDeposit(APIView):
             return Response(data, status=response.status_code)
 
 
+# class KoraWebhook(APIView):
+#     permission_classes = [AllowAny]
+#
+#     def post(self, request):
+#         # Check if the request is a POST
+#         if 'HTTP_X_KORAPAY_SIGNATURE' not in request.headers:
+#             return Response({'error': 'Invalid request'}, status=400)
+#
+#         # Get the request body and signature
+#         request_body = json.loads(request.body)
+#         webhook_signature = request.headers['HTTP_X_KORAPAY_SIGNATURE']
+
 class KoraWebhook(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # Check if the request is a POST
-        if 'HTTP_X_KORAPAY_SIGNATURE' not in request.headers:
+        # Check if 'X-KORAPAY-SIGNATURE' header exists in the request
+        if 'X-KORAPAY-SIGNATURE' not in request.headers:
             return Response({'error': 'Invalid request'}, status=400)
 
-        # Get the request body and signature
-        request_body = json.loads(request.body)
-        webhook_signature = request.headers['HTTP_X_KORAPAY_SIGNATURE']
+        request_body = json.loads(request.body.decode('utf-8'))
+        webhook_signature = request.headers['X-KORAPAY-SIGNATURE']
+
+        expected_signature = hmac.new(
+            KORA_SECRET.encode('utf-8'),
+            json.dumps(request_body['data'], separators=(',', ':')).encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+
+        # Compare signatures to validate the request
+        if webhook_signature != expected_signature:
+            return Response({'error': 'Invalid signature'}, status=400)
+        try:
+            with transaction.atomic():
+                user_id = request_body['data']['payment_reference'].split('-')[1]
+                user = User.objects.get(id=user_id)
+                wallet = Wallet.objects.get(user=user)
+                wallet.balance += float(request_body['data']['amount'])
+                wallet.save()
+                History.objects.create(
+                    type='CREDIT',
+                    wallet=wallet,
+                    amount=request_body['data']['amount']
+                )
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=404)
+        except Wallet.DoesNotExist:
+            return Response({'error': 'Wallet not found'}, status=404)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+        return Response({'status': 'success'}, status=200)
 
 
 class Users(APIView):
@@ -803,6 +879,211 @@ class Users(APIView):
                 "message": "User not found",
             }, status=status.HTTP_404_NOT_FOUND)
 
+
+def encryption_charge(encryptionKey, paymentData):
+    try:
+        iv = Random.get_random_bytes(16)
+        encObj = AES.new(encryptionKey.encode("utf8"), AES.MODE_GCM, iv)
+        cipherText, authTag = encObj.encrypt_and_digest(paymentData.encode("utf8"))
+        iv64 = base64.b64encode(iv).decode('ascii')
+        ivToHex = hexa(iv).decode()
+        cipherTextToHex = hexa(cipherText).decode()
+        authTagToHex = hexa(authTag).decode()
+        result = ivToHex + ":" + cipherTextToHex + ":" + authTagToHex
+        data = json.dumps({
+            'charge_data': result
+        })
+        response, status_code = charge_card(data)
+        return response, status_code
+
+    except Exception as e:
+        print(e)
+
+
+def charge_card(data):
+    url = 'https://api.korapay.com/merchant/api/v1/charges/card'
+
+    header = {
+        'Authorization': f'Bearer {KORA_SECRET}',
+        'Content-Type': 'application/json'
+    }
+    response = requests.post(url=url, data=data, headers=header)
+    print(response.text)
+
+    return response.json(), response.status_code
+
+
+class CardDeposit(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        print('cat')
+        data = request.data
+        user = request.user
+        if 'number' not in data:
+            return Response({
+                'message': 'Card number is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'cvv' not in data:
+            return Response({
+                'message': 'Cvv is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'expiry_month' not in data:
+            return Response({
+                'message': 'Expiry month is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'expiry_year' not in data:
+            return Response({
+                'message': 'Expiry year is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        if 'amount' not in data:
+            return Response({
+                'message': 'Amount is required',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        payload = json.dumps({
+            "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",
+            "card": {
+                "number": data['number'],
+                "cvv": data['cvv'],
+                "expiry_month": data['expiry_month'],
+                "expiry_year": data['expiry_year']
+            },
+            "amount": data['amount'],
+            "currency": "NGN",
+            "customer": {
+                "name": f'{user.firstName} {user.lastName}',
+                "email": user.email
+            },
+            "redirect_url":"http://localhost:8000/api/webhook"
+
+        })
+        response, status_code = encryption_charge(encryptionKey=os.getenv('ENCRYPTION_KEY'), paymentData=payload)
+        if status_code == 200:
+            transaction_reference = response['data']['transaction_reference']
+            if 'auth_model' not in response['data'] or response['data'].get('auth_model') == 'NO_AUTH':
+                return Response(response['data'], status=status_code)
+            print(response['data']['auth_model'])
+            if response['data']['auth_model'] != 'NO_AUTH':
+                if response['data']['auth_model'] == 'PIN':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'PIN required',
+                        'required fields': ['pin']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == 'OTP':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'OTP required',
+                        'required fields': ['otp']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == '3DS':
+                    return Response({
+                        'redirect_url': response['data']['redirect_url']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == 'AVS':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'AVS requuired',
+                        'Required fields': ['state', 'city', 'country', 'address', 'zip_code']
+                    })
+        else:
+            return Response(response['data'], status=status_code)
+
+
+class CardAuth(APIView):
+    def post(self, request):
+        auth_type = request.GET['type'].strip().lower()
+        data = request.data
+        if 'transaction_reference' not in data:
+            return Response({
+                'message': 'Transaction reference is required'
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        payload = {'transaction_reference': data['transaction_reference']}
+
+        if auth_type == 'otp':
+            if 'otp' not in data:
+                print(2)
+                return Response({
+                    'message': 'OTP is required'
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+            else:
+                try:
+                    int(data['otp'])
+                except ValueError:
+                    return Response({
+                        'message': 'OTP is not a numerical value'
+                    }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+                payload['authorization'] = {
+                    'otp': data['otp']
+                }
+        elif auth_type == 'pin':
+            if 'pin' not in data:
+                return Response({
+                    'message': 'Pin is required'
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+            else:
+                try:
+                    int(data['pin'])
+                    payload['authorization'] = {
+                        'pin': data['pin']
+                    }
+                except ValueError:
+                    return Response({
+                        'message': 'Pin is not a numerical value'
+                    }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        elif auth_type == 'AVS':
+            if 'state' not in data:
+                return Response({
+                    'message': 'State must be included in request body',
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if 'city' not in data:
+                return Response({
+                    'message': 'City must be included in request body',
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if 'country' not in data:
+                return Response({
+                    'message': 'Country must be included in request body',
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if 'address' not in data:
+                return Response({
+                    'message': 'Address must be included in request body',
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            if 'zip_code' not in data:
+                return Response({
+                    'message': 'Zip code must be included in request body',
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            payload['authorization'] = {
+                'avs': {
+                    'state': data['state'],
+                    'city': data['city'],
+                    'country': data['country'],
+                    'address': data['address'],
+                    'zip_code': data['zip_code']
+                }}
+        payload = json.dumps(payload)
+        print(payload)
+        response, status_code = card_auth(payload)
+        if status_code == 200:
+            return Response(response['data'], status=status.HTTP_200_OK)
+        else:
+            return Response(response['data'], status=status_code)
+
+
+def card_auth(data):
+    url = 'https://api.korapay.com/merchant/api/v1/charges/card/authorize'
+    header = {
+        'Authorization': f'Bearer {KORA_SECRET}',
+        'Content-Type': 'application/json'
+    }
+    response = requests.post(url=url, data=data, headers=header)
+    print(response.json())
+    return response.json(), response.status_code
 
 class WalletPayment(APIView):
     permission_classes = [IsAuthenticated]
@@ -1299,3 +1580,22 @@ class PaymentRedirectAPIView(APIView):
                 "status": "error",
                 "message": f"An error occurred: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+def bank_pay(amount, user):
+    url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
+    payload = json.dumps({
+    "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",
+    "amount": f'{amount}',
+    "currency": "NGN",
+    "customer": {
+        'name': f'{user.firstName} {user.lastName}',
+    	"email": f'{user.email}'
+        },
+    })
+    headers = {
+        'Authorization': f'Bearer {KORA_SECRET}',
+        'Content-Type' : 'application/json'
+    }
+    response = requests.post(url=url, data=payload, headers= headers)
+    return response.json(), response.status_code
+
