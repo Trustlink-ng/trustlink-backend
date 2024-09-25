@@ -77,7 +77,7 @@ class Transaction(models.Model):
     ]
 
     mode = models.CharField(max_length=10, choices=MODE_CHOICES)
-    sender = models.ForeignKey(User, related_name='sent_transactions', on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, related_name='sent_transactions', on_delete=models.CASCADE, null=True)
     receiver = models.ForeignKey(User, related_name='received_transactions', on_delete=models.CASCADE)
     description = models.CharField(max_length=255)
     amount = models.FloatField()

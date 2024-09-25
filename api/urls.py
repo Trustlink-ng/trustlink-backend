@@ -23,5 +23,6 @@ urlpatterns = [
     path('api/wallet/history', WalletHistory.as_view(), name='wallet-history'),
     path('api/history/<int:id>', SpecificHistory.as_view(), name='specific-history'),
     path('api/trans/history', GeneralTransaction.as_view(), name='general=transaction'),
-    path('api/generate', GeneratePayment.as_view(), name="generate-payment")
+    path('api/generate', GeneratePayment.as_view(), name="generate-payment"),
+    path('api/checkout', PaymentRedirectAPIView.as_view(), name="payment-redirect")
 ]
