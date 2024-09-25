@@ -1266,7 +1266,7 @@ class PaymentRedirectAPIView(APIView):
                 try:
                     code = random.randint(1000, 9999)
                     transaction = Transaction.objects.create(
-                        mode="KORA",
+                        mode="Kora",
                         receiver=user,
                         description=transaction_data['data'].get('description'),
                         amount=float(transaction_data['data'].get('amount_paid')),
