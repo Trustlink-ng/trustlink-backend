@@ -898,7 +898,7 @@ class VerifyPayment(APIView):
                 if transaction.status == 'Pending':
                     if transaction.receiver == recipient:
                         if code == transaction.code:
-                            recipient.wallet.balance = + transaction.amount
+                            recipient.wallet.balance += transaction.amount
                             recipient.wallet.save()
                             History.objects.create(
                                 wallet=recipient.wallet,
@@ -907,12 +907,16 @@ class VerifyPayment(APIView):
                             )
                             transaction.status = 'Completed'
                             transaction.save()
+                            if transaction.sender != None:
+                                send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
+                                          f'Your Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.',
+                                          EMAIL_HOST_USER, [recipient.email], fail_silently=False)
+                                send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
+                                          f"{recipient.email}'s Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.",
+                                          EMAIL_HOST_USER, [transaction.sender.email], fail_silently=False)
                             send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
                                       f'Your Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.',
                                       EMAIL_HOST_USER, [recipient.email], fail_silently=False)
-                            send_mail(f'Transaction {transaction.id}-{transaction.date} has been completed!!',
-                                      f"{recipient.email}'s Wallet has been credited with ₦{transaction.amount}. \n\nThank you for Trusting Trustlink.",
-                                      EMAIL_HOST_USER, [transaction.sender.email], fail_silently=False)
                             return Response({
                                 "message": "Transaction Successful. Your wallet will be credited shortly",
                                 "data": TransactionSerializer(transaction, context={'request': request}).data

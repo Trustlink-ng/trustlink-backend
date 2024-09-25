@@ -86,7 +86,7 @@ class Transaction(models.Model):
     code = models.CharField(max_length=5)
 
     def __str__(self):
-        return f"{self.sender.email} to {self.receiver.email} on {self.date}"
+        return f"{self.receiver.email} on {self.date}"
 
 class Wallet(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wallet')
