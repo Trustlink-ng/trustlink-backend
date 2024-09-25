@@ -586,11 +586,12 @@ class WithdrawWallet(APIView):
                 "message": "Pin is required"
             }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         amount = data['amount']
-        pin = data['amount']
+        pin = str(data['pin'])
         try:
             wallet = Wallet.objects.get(user=request.user)
             try:
                 account = Account.objects.get(user=request.user)
+                print(account.user.pin)
                 if bcrypt.checkpw(pin.encode('utf-8'), account.user.pin.encode('utf-8')):
                     if wallet.balance - float(amount) >= 100:
                         payment = kora_payout(str(amount), str(account.bankCode), str(account.accountNumber),
