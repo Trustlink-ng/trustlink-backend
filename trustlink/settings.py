@@ -186,8 +186,7 @@ EMAIL_DEBUG = True
 
 AUTH_USER_MODEL = 'api.User'
 KORA_SECRET = os.getenv('KORA_SECRET')
-
+ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')
 
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = '/media/'
-ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')

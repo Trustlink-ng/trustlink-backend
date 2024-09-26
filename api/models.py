@@ -77,7 +77,7 @@ class Transaction(models.Model):
     ]
 
     mode = models.CharField(max_length=10, choices=MODE_CHOICES)
-    sender = models.ForeignKey(User, related_name='sent_transactions', on_delete=models.CASCADE)
+    sender = models.ForeignKey(User, related_name='sent_transactions', on_delete=models.CASCADE, null=True)
     receiver = models.ForeignKey(User, related_name='received_transactions', on_delete=models.CASCADE)
     description = models.CharField(max_length=255)
     amount = models.FloatField()
@@ -86,7 +86,7 @@ class Transaction(models.Model):
     code = models.CharField(max_length=5)
 
     def __str__(self):
-        return f"{self.sender.email} to {self.receiver.email} on {self.date}"
+        return f"{self.receiver.email} on {self.date}"
 
 class Wallet(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wallet')
@@ -104,6 +104,7 @@ class History(models.Model):
     type = models.CharField(max_length=7, choices=TYPE)
     amount = models.FloatField()
     date = models.DateTimeField(auto_now_add=True, null=True)
+    reference = models.CharField(max_length=20, blank=True, null=True)
 
 class Banks(models.Model):
     name = models.CharField(max_length=255)
