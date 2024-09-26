@@ -776,6 +776,43 @@ class BankTransferDeposit(APIView):
             data['statusCode'] = response.status_code
             return Response(data, status=response.status_code)
 
+        
+class DepositRedirectAPIView(APIView):
+    def get(self, request):
+        print('yes')
+        reference = request.GET.get('reference')
+        if not reference:
+            return Response({
+                "status": "error",
+                "message": "Transaction reference not provided"
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Call KoraPay API to verify transaction status using the reference
+        url = f"https://api.korapay.com/merchant/api/v1/charges/{reference}"
+        headers = {
+            "Authorization": f"Bearer {os.getenv('KORA_SECRET')}"
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            transaction_data = response.json()
+            print(transaction_data)
+            if transaction_data['data'].get('status') == "success":
+                id = int(transaction_data['data']['metadata'].get('user_id'))
+                user = User.objects.get(pk=id)
+
+            else:
+                # Return transaction failure details
+                return Response({
+                    "status": "failed",
+                    "message": "Transaction failed or incomplete",
+                    "transaction": transaction_data
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                "status": "error",
+                "message": f"An error occurred: {str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class KoraWebhook(APIView):
     permission_classes = [AllowAny]
@@ -784,36 +821,42 @@ class KoraWebhook(APIView):
         # Check if 'X-KORAPAY-SIGNATURE' header exists in the request
         if 'X-KORAPAY-SIGNATURE' not in request.headers:
             return Response({'error': 'Invalid request'}, status=400)
-
-        request_body = json.loads(request.body.decode('utf-8'))
         webhook_signature = request.headers['X-KORAPAY-SIGNATURE']
-
-        expected_signature = hmac.new(
-            KORA_SECRET.encode('utf-8'),
-            json.dumps(request_body['data'], separators=(',', ':')).encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-
+        payload = json.loads(request.body)
+        data_bytes = json.dumps(payload['data'], separators=(',', ':')).encode('utf-8')
+        expected_signature = hmac.new(KORA_SECRET.encode('utf-8'), data_bytes, digestmod=hashlib.sha256).hexdigest()
+        print(expected_signature)
         # Compare signatures to validate the request
         if webhook_signature != expected_signature:
             return Response({'error': 'Invalid signature'}, status=400)
+        if History.objects.filter(reference = payload['data']['payment_reference']).exists():
+            return Response({
+                'message': 'Deposit is already successful'
+            }, status=status.HTTP_200_OK)
         try:
             with transaction.atomic():
-                user_id = request_body['data']['payment_reference'].split('-')[1]
+                user_id = payload['data']['payment_reference'].split('-')[1]
                 user = User.objects.get(id=user_id)
                 wallet = Wallet.objects.get(user=user)
-                wallet.balance += float(request_body['data']['amount'])
+                wallet.balance += float(payload['data']['amount'])
                 wallet.save()
                 History.objects.create(
                     type='CREDIT',
                     wallet=wallet,
-                    amount=request_body['data']['amount']
+                    amount=payload['data']['amount'], 
+                    reference = payload['data']['reference']
                 )
+                print('ys')
+                send_mail('Deposit has been made to your wallet!!',
+                        f"The sum of ₦{payload['data']['amount']} has been deposited to your wallet",
+                        EMAIL_HOST_USER, [user.email], fail_silently=False)
+                return Response({'message': 'Wallet credited successfully', 'amount': float(payload['data']['amount'])}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=404)
         except Wallet.DoesNotExist:
             return Response({'error': 'Wallet not found'}, status=404)
         except Exception as e:
+            print(e)
             return Response({'error': str(e)}, status=500)
 
         return Response({'status': 'success'}, status=200)
@@ -912,8 +955,7 @@ class CardDeposit(APIView):
                 "name": f'{user.firstName} {user.lastName}',
                 "email": user.email
             },
-            "redirect_url": "http://localhost:8000/api/webhook"
-
+            "redirect_url":"https://trustlink-backend.vercel.app/api/webhook"
         })
         response, status_code = encryption_charge(encryptionKey=os.getenv('ENCRYPTION_KEY'), paymentData=payload)
         if status_code == 200:
@@ -960,7 +1002,6 @@ class CardAuth(APIView):
 
         if auth_type == 'otp':
             if 'otp' not in data:
-                print(2)
                 return Response({
                     'message': 'OTP is required'
                 }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
