@@ -104,7 +104,7 @@ class History(models.Model):
     type = models.CharField(max_length=7, choices=TYPE)
     amount = models.FloatField()
     date = models.DateTimeField(auto_now_add=True, null=True)
-    reference = models.CharField(max_length=20, blank=True, null=True)
+    reference = models.CharField(max_length=25, blank=True, null=True)
 
 class Banks(models.Model):
     name = models.CharField(max_length=255)
