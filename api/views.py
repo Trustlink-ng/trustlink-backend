@@ -987,7 +987,7 @@ class CardDeposit(APIView):
                 "name": f'{user.firstName} {user.lastName}',
                 "email": user.email
             },
-            "redirect_url":"https://4821-102-91-71-34.ngrok-free.app/api/webhook"
+            "redirect_url":"https://trustlink-backend.vercel.app/api/webhook"
 
         })
         response, status_code = encryption_charge(encryptionKey=os.getenv('ENCRYPTION_KEY'), paymentData=payload)
