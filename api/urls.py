@@ -27,5 +27,6 @@ urlpatterns = [
     path('api/checkout', PaymentRedirectAPIView.as_view(), name="payment-redirect"),
     path('api/deposit/card', CardDeposit.as_view(), name='card-deposit'),
     path('api/card-auth', CardAuth.as_view(), name='card-auth'),
-    path('api/webhook', KoraWebhook.as_view(), name='webhook')
+    path('api/webhook', KoraWebhook.as_view(), name='webhook'),
+    # path('auth/logout', LogoutView.as_view(), name='logout')
 ]

@@ -84,7 +84,9 @@ REST_FRAMEWORK = {
 }
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': datetime.timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=1)
+    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=1),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 ROOT_URLCONF = 'trustlink.urls'
@@ -190,3 +192,12 @@ ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY')
 
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = '/media/'
+
+import cloudinary
+cloudinary.config(
+  	cloud_name = os.getenv("C_NAME"),
+  	api_key = os.getenv("API_KEY"),
+  	api_secret = os.getenv("API_SECRET")
+)
+
+DEFAULT_FILE_STORAGE="cloudinary_storage.storage.MediaCloudinaryStorage"
