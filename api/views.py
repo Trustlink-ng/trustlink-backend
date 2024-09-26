@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import uuid
+
 from django.db import transaction
 from django.http import JsonResponse
 from dotenv import load_dotenv
@@ -808,7 +809,6 @@ class BankTransferDeposit(APIView):
             data['statusCode'] = response.status_code
             return Response(data, status=response.status_code)
 
-
         
 class DepositRedirectAPIView(APIView):
     def get(self, request):
@@ -854,7 +854,6 @@ class KoraWebhook(APIView):
         # Check if 'X-KORAPAY-SIGNATURE' header exists in the request
         if 'X-KORAPAY-SIGNATURE' not in request.headers:
             return Response({'error': 'Invalid request'}, status=400)
-
         webhook_signature = request.headers['X-KORAPAY-SIGNATURE']
         payload = json.loads(request.body)
         data_bytes = json.dumps(payload['data'], separators=(',', ':')).encode('utf-8')
@@ -873,6 +872,24 @@ class KoraWebhook(APIView):
                 user = User.objects.get(id=user_id)
                 wallet = Wallet.objects.get(user=user)
                 wallet.balance += float(payload['data']['amount'])
+        request_body = json.loads(request.body.decode('utf-8'))
+        webhook_signature = request.headers['X-KORAPAY-SIGNATURE']
+
+        expected_signature = hmac.new(
+            KORA_SECRET.encode('utf-8'),
+            json.dumps(request_body['data'], separators=(',', ':')).encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+
+        # Compare signatures to validate the request
+        if webhook_signature != expected_signature:
+            return Response({'error': 'Invalid signature'}, status=400)
+        try:
+            with transaction.atomic():
+                user_id = request_body['data']['payment_reference'].split('-')[1]
+                user = User.objects.get(id=user_id)
+                wallet = Wallet.objects.get(user=user)
+                wallet.balance += float(request_body['data']['amount'])
                 wallet.save()
                 History.objects.create(
                     type='CREDIT',
@@ -940,6 +957,7 @@ def charge_card(data):
         'Content-Type': 'application/json'
     }
     response = requests.post(url=url, data=data, headers=header)
+    print(response.text)
 
     return response.json(), response.status_code
 
@@ -948,6 +966,7 @@ class CardDeposit(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        print('cat')
         data = request.data
         user = request.user
         if 'number' not in data:
@@ -988,7 +1007,6 @@ class CardDeposit(APIView):
                 "email": user.email
             },
             "redirect_url":"https://trustlink-backend.vercel.app/api/webhook"
-
         })
         response, status_code = encryption_charge(encryptionKey=os.getenv('ENCRYPTION_KEY'), paymentData=payload)
         if status_code == 200:
@@ -1096,6 +1114,7 @@ class CardAuth(APIView):
                     'zip_code': data['zip_code']
                 }}
         payload = json.dumps(payload)
+        print(payload)
         response, status_code = card_auth(payload)
         if status_code == 200:
             return Response(response['data'], status=status.HTTP_200_OK)
@@ -1110,6 +1129,7 @@ def card_auth(data):
         'Content-Type': 'application/json'
     }
     response = requests.post(url=url, data=data, headers=header)
+    print(response.json())
     return response.json(), response.status_code
 
 class WalletPayment(APIView):
@@ -1625,4 +1645,5 @@ def bank_pay(amount, user):
     }
     response = requests.post(url=url, data=payload, headers= headers)
     return response.json(), response.status_code
+
 
