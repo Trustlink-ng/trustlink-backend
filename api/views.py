@@ -14,6 +14,7 @@ import requests
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -456,10 +457,14 @@ class CreateAccount(APIView):
     def get(self, request):
         try:
             banks = Banks.objects.all()
-            return Response({
-                "message": "Banks retrieved successfully.",
-                "banks": BankSerializer(banks, many=True).data
-            }, status=status.HTTP_200_OK)
+
+            # Set up pagination
+            paginator = PageNumberPagination()
+            paginator.page_size = 10  # Or any size you want
+            paginated_banks = paginator.paginate_queryset(banks, request)
+
+            # Use the paginated queryset in the response
+            return paginator.get_paginated_response(BankSerializer(paginated_banks, many=True).data)
         except Exception as e:
             return Response({
                 "message": str(e)
@@ -1284,7 +1289,7 @@ class DisputeTransaction(APIView):
                                   EMAIL_HOST_USER, [user.email], fail_silently=False)
                         return Response({
                             "message": "Refund request successfully sent.",
-                            "data": DisputeSerializer(dispute).data
+                            "data": DisputeSerializer(dispute, context={'request':request}).data
                         }, status=status.HTTP_200_OK)
                     return Response({
                         "message": "You cannot request refund as you did not initiate transaction"
@@ -1362,11 +1367,26 @@ class DisputeTransaction(APIView):
             dispute = Dispute.objects.get(id=id)
             return Response({
                 "message": "Dispute retrieved successfully",
-                "data": DisputeSerializer(dispute).data
+                "data": DisputeSerializer(dispute, context={"request":request}).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
                 "message": f"Internal Server Error-{str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AllDispute(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        try:
+            print(request.user)
+            disputes = Dispute.objects.filter(Q(transaction__sender=request.user) | Q(transaction__receiver=request.user))
+            return Response({
+                "message":"All disputes retrieved successfully",
+                "data":DisputeSerializer(disputes, many=True, context={'request':request}).data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message":str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
