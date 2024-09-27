@@ -777,43 +777,6 @@ class BankTransferDeposit(APIView):
             return Response(data, status=response.status_code)
 
         
-class DepositRedirectAPIView(APIView):
-    def get(self, request):
-        print('yes')
-        reference = request.GET.get('reference')
-        if not reference:
-            return Response({
-                "status": "error",
-                "message": "Transaction reference not provided"
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        # Call KoraPay API to verify transaction status using the reference
-        url = f"https://api.korapay.com/merchant/api/v1/charges/{reference}"
-        headers = {
-            "Authorization": f"Bearer {os.getenv('KORA_SECRET')}"
-        }
-
-        try:
-            response = requests.get(url, headers=headers)
-            transaction_data = response.json()
-            print(transaction_data)
-            if transaction_data['data'].get('status') == "success":
-                id = int(transaction_data['data']['metadata'].get('user_id'))
-                user = User.objects.get(pk=id)
-
-            else:
-                # Return transaction failure details
-                return Response({
-                    "status": "failed",
-                    "message": "Transaction failed or incomplete",
-                    "transaction": transaction_data
-                }, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({
-                "status": "error",
-                "message": f"An error occurred: {str(e)}"
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 class KoraWebhook(APIView):
     permission_classes = [AllowAny]
 
@@ -825,57 +788,64 @@ class KoraWebhook(APIView):
         payload = json.loads(request.body)
         data_bytes = json.dumps(payload['data'], separators=(',', ':')).encode('utf-8')
         expected_signature = hmac.new(KORA_SECRET.encode('utf-8'), data_bytes, digestmod=hashlib.sha256).hexdigest()
-        print(expected_signature)
         # Compare signatures to validate the request
         if webhook_signature != expected_signature:
             return Response({'error': 'Invalid signature'}, status=400)
-        if History.objects.filter(reference = payload['data']['payment_reference']).exists():
+        if History.objects.filter(reference = payload['data']['payment_reference']).exists() or Transaction.objects.filter(reference = payload['data']['payment_reference']).exists():
             return Response({
-                'message': 'Deposit is already successful'
+                'message': 'Transaction is already successful'
             }, status=status.HTTP_200_OK)
         try:
             with transaction.atomic():
-                if 'metadata' in payload['data']:
-                    sender_id = int(payload['data']['metadata']['sender_id'])
-                    receiver_id = int(payload['data']['metadata']['receiver_id'])
-                    description = payload['data'].get('description', '')
+                reference =  payload['data']['payment_reference']
+                if 'transfer' in reference:
+                    sender_id = int(reference.split('-')[1])
+                    receiver_id = int(reference.split('-')[2])
+                    description = reference.split('-')[3].replace('_', ' ')
                     sender = User.objects.get(id = sender_id)
                     receiver = User.objects.get(id = receiver_id)
                     amount = float(payload['data']['amount'])
                     code = random.randint(1000, 9999)
-                    transaction = Transaction.objects.create(
+                    new_transaction = Transaction.objects.create(
                         mode="Kora",
                         sender=sender,
                         receiver=receiver,
                         description=description,
                         amount=float(amount),
-                        code=code
+                        code=code,
+                        reference = reference
                     )
-                    send_mail('A payment has been made!!',
-                              f'{sender.email} just sent you ₦{amount}. \n\nRetrieve code from them to complete transaction',
-                              EMAIL_HOST_USER, [receiver.email], fail_silently=False)
-                    send_mail('Your bank account has just been debited',
-                              f'You have just sent the sum of ₦{amount} to {receiver.email}. \n\nOnly give them the code({code}) when you are satisfied with your Purchase.',
-                              EMAIL_HOST_USER, [receiver.email], fail_silently=False)
+                    print('In!')
+                    try:
+                        send_mail('A payment has been made!!',
+                                  f'{sender.email} just sent you ₦{amount}. \n\nRetrieve code from them to complete transaction',
+                                  EMAIL_HOST_USER, [receiver.email], fail_silently=False)
+                        send_mail('Your bank account has just been debited',
+                                  f'You have just sent the sum of ₦{amount} to {receiver.email}. \n\nOnly give them the code({code}) when you are satisfied with your Purchase.',
+                                  EMAIL_HOST_USER, [sender.email], fail_silently=False)
+                    except Exception as e:
+                        print(e)
+                        
                     return Response({
                         "message": "Transaction initiated successfully",
-                        "data": TransactionSerializer(transaction, context={'request': request}).data
+                        "data": TransactionSerializer(new_transaction, context={'request': request}).data
                     }, status=status.HTTP_200_OK)
-                user_id = payload['data']['payment_reference'].split('-')[1]
-                user = User.objects.get(id=user_id)
-                wallet = Wallet.objects.get(user=user)
-                wallet.balance += float(payload['data']['amount'])
-                wallet.save()
-                History.objects.create(
-                    type='CREDIT',
-                    wallet=wallet,
-                    amount=payload['data']['amount'], 
-                    reference = payload['data']['reference']
-                )
-                # send_mail('Deposit has been made to your wallet!!',
-                #         f"The sum of ₦{payload['data']['amount']} has been deposited to your wallet",
-                #         EMAIL_HOST_USER, [user.email], fail_silently=False)
-                return Response({'message': 'Wallet credited successfully', 'amount': float(payload['data']['amount'])}, status=status.HTTP_200_OK)
+                else:
+                    user_id = payload['data']['payment_reference'].split('-')[1]
+                    user = User.objects.get(id=user_id)
+                    wallet = Wallet.objects.get(user=user)
+                    wallet.balance += float(payload['data']['amount'])
+                    wallet.save()
+                    History.objects.create(
+                        type='CREDIT',
+                        wallet=wallet,
+                        amount=payload['data']['amount'], 
+                        reference = payload['data']['reference']
+                    )
+                    send_mail('Deposit has been made to your wallet!!',
+                            f"The sum of ₦{payload['data']['amount']} has been deposited to your wallet",
+                            EMAIL_HOST_USER, [user.email], fail_silently=False)
+                return Response({'message': 'Wallet credited successfully', 'amount': float(payload['data']['amount'])}, status=status. HTTP_200_OK)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=404)
         except Wallet.DoesNotExist:
@@ -1088,7 +1058,6 @@ class CardAuth(APIView):
                     'zip_code': data['zip_code']
                 }}
         payload = json.dumps(payload)
-        print(payload)
         response, status_code = card_auth(payload)
         if status_code == 200:
             return Response(response['data'], status=status.HTTP_200_OK)
@@ -1103,7 +1072,7 @@ def card_auth(data):
         'Content-Type': 'application/json'
     }
     response = requests.post(url=url, data=data, headers=header)
-    print(response.json())
+    print(f'"Json reson"{response.json()}')
     return response.json(), response.status_code
 
 
@@ -1609,7 +1578,7 @@ class PaymentRedirectAPIView(APIView):
 
 def bank_pay(amount, user, metadata=None):
     url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
-    payload = json.dumps({
+    payload = {
         "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",
         "amount": f'{amount}',
         "currency": "NGN",
@@ -1617,8 +1586,11 @@ def bank_pay(amount, user, metadata=None):
             'name': f'{user.firstName} {user.lastName}',
             "email": f'{user.email}'
         },
-        'metadata': metadata
-    })
+    }
+    if metadata:
+        payload['reference'] = f'transfer-{metadata['sender_id']}-{metadata['receiver_id']}-{metadata['description'].replace(' ', '_')}-{str(uuid.uuid4())[:6]}'
+    print(payload['reference'])
+    payload = json.dumps(payload)
     headers = {
         'Authorization': f'Bearer {KORA_SECRET}',
         'Content-Type': 'application/json'
@@ -1648,6 +1620,8 @@ class TransferPayment(APIView):
                 }, status=status.HTTP_404_NOT_FOUND)
         recipient = data['recipient']
         recipient_user = User.objects.get(Q(email=recipient.lower()) | Q(username=recipient))
+        if recipient_user == user:
+            return Response({'message': 'You can only transfer to other accounts'}, status=status.HTTP_400_BAD_REQUEST)
         if not hasattr(recipient_user, 'wallet'):
             return Response({
                 'message': 'Recipient wallet not found'
@@ -1671,6 +1645,7 @@ class TransferPayment(APIView):
         
         print(metadata)
         response, status_code = bank_pay(amount=data['amount'], user=user, metadata=metadata)
+        print(response)
         if status_code == 200:
             data = response['data']['bank_account']
             data['statusCode'] = 200
@@ -1720,6 +1695,8 @@ class CardPayment(APIView):
                 }, status=status.HTTP_404_NOT_FOUND)
         recipient = data['recipient']
         recipient_user = User.objects.get(Q(email=recipient.lower()) | Q(username=recipient))
+        if False:#recipient_user == user:
+            return Response({'message': 'You can only transfer to other accounts'}, status=status.HTTP_400_BAD_REQUEST)
         if not hasattr(recipient_user, 'wallet'):
             return Response({
                 'message': 'Recipient wallet not found'
@@ -1728,12 +1705,11 @@ class CardPayment(APIView):
             'sender_id': user.id,
             'receiver_id':recipient_user.id,
         }
-        if data.get('description') is not None: 
-            description = data.get('description')
-            metadata['description'] = description
+
+        metadata['description'] = data.get('description', 'Payment')
 
         payload = json.dumps({
-            "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",
+            "reference": f'transfer-{metadata['sender_id']}-{metadata['receiver_id']}-{metadata['description'].replace(' ', '_')}-{str(uuid.uuid4())[:6]}',
             "card": {
                 "number": data['number'],
                 "cvv": data['cvv'],
@@ -1750,11 +1726,12 @@ class CardPayment(APIView):
             'metadata': metadata
         })
         response, status_code = encryption_charge(encryptionKey=os.getenv('ENCRYPTION_KEY'), paymentData=payload)
+        
         if status_code == 200:
             transaction_reference = response['data']['transaction_reference']
             if 'auth_model' not in response['data'] or response['data'].get('auth_model') == 'NO_AUTH':
                 return Response(response['data'], status=status_code)
-            print(response['data']['auth_model'])
+         
             if response['data']['auth_model'] != 'NO_AUTH':
                 if response['data']['auth_model'] == 'PIN':
                     return Response({

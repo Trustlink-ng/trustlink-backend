@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-
+from cloudinary.models import CloudinaryField
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
@@ -84,6 +84,7 @@ class Transaction(models.Model):
     date = models.DateTimeField(auto_now_add=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='Pending')
     code = models.CharField(max_length=5)
+    reference = models.CharField(max_length=50, blank=True, null=True)
 
     def __str__(self):
         return f"{self.receiver.email} on {self.date}"
@@ -104,7 +105,7 @@ class History(models.Model):
     type = models.CharField(max_length=7, choices=TYPE)
     amount = models.FloatField()
     date = models.DateTimeField(auto_now_add=True, null=True)
-    reference = models.CharField(max_length=20, blank=True, null=True)
+    reference = models.CharField(max_length=25, blank=True, null=True)
 
 class Banks(models.Model):
     name = models.CharField(max_length=255)
@@ -121,12 +122,16 @@ class Dispute(models.Model):
     ]
     transaction = models.ForeignKey(Transaction, on_delete=models.CASCADE, related_name='refund')
     reason = models.CharField(max_length=300, null=True, blank=True)
-    evidence = models.ImageField(upload_to='images/', blank=True, null=True)
+    evidence = CloudinaryField('image', null=True)
     code= models.CharField(max_length=6)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='Pending')
 
     def __str__(self):
         return f"{self.transaction.sender} to {self.transaction.receiver}"
+
+class Token(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='token')
+    refresh_token = models.CharField(max_length=255, null=True, blank=True)
 
 
 
