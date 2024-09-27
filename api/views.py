@@ -844,7 +844,7 @@ class KoraWebhook(APIView):
                     amount = float(payload['data']['amount'])
                     code = random.randint(1000, 9999)
                     transaction = Transaction.objects.create(
-                        mode="Wallet",
+                        mode="Kora",
                         sender=sender,
                         receiver=receiver,
                         description=description,
