@@ -438,6 +438,19 @@ def store_banks(request):
         return JsonResponse({"error": f"Request failed with status code {response.status_code}"},
                             status=response.status_code)
 
+class UserAccount(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        try:
+            account = Account.objects.get(user=request.user)
+            return Response({
+                "message":"Account details retrieved successfully",
+                "data":AccountSerializer(account).data
+            }, status=status.HTTP_200_OK)
+        except Account.DoesNotExist:
+            return Response({
+                "message":"No account details set up"
+            }, status=status.HTTP_404_NOT_FOUND)
 
 class CreateAccount(APIView):
     def get(self, request):

@@ -40,7 +40,7 @@ class WalletSerializer(serializers.ModelSerializer):
 class DisputeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Dispute
-        fields = ['transaction', 'reason', 'evidence']
+        fields = ['id','transaction', 'reason', 'evidence']
 
 class HistorySerializer(serializers.ModelSerializer):
     class Meta:
