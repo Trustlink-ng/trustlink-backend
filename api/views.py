@@ -4,7 +4,6 @@ import hmac
 import json
 import os
 import uuid
-
 import rest_framework_simplejwt.tokens
 from django.db import transaction
 from django.http import JsonResponse
@@ -859,7 +858,7 @@ class KoraWebhook(APIView):
                     receiver = User.objects.get(id = receiver_id)
                     amount = float(payload['data']['amount'])
                     code = random.randint(1000, 9999)
-                    transaction = Transaction.objects.create(
+                    transactions = Transaction.objects.create(
                         mode="Kora",
                         sender=sender,
                         receiver=receiver,
@@ -875,7 +874,7 @@ class KoraWebhook(APIView):
                               EMAIL_HOST_USER, [receiver.email], fail_silently=False)
                     return Response({
                         "message": "Transaction initiated successfully",
-                        "data": TransactionSerializer(transaction, context={'request': request}).data
+                        "data": TransactionSerializer(transactions, context={'request': request}).data
                     }, status=status.HTTP_200_OK)
                 user_id = payload['data']['payment_reference'].split('-')[1]
                 user = User.objects.get(id=user_id)
