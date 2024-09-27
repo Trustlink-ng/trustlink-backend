@@ -38,9 +38,10 @@ class WalletSerializer(serializers.ModelSerializer):
         model = Wallet
         fields = "__all__"
 class DisputeSerializer(serializers.ModelSerializer):
+    transaction = TransactionSerializer()
     class Meta:
         model = Dispute
-        fields = ['transaction', 'reason', 'evidence']
+        fields = ['id','transaction', 'reason', 'evidence']
 
 class HistorySerializer(serializers.ModelSerializer):
     class Meta:

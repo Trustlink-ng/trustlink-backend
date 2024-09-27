@@ -14,6 +14,7 @@ import requests
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -438,15 +439,32 @@ def store_banks(request):
         return JsonResponse({"error": f"Request failed with status code {response.status_code}"},
                             status=response.status_code)
 
+class UserAccount(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        try:
+            account = Account.objects.get(user=request.user)
+            return Response({
+                "message":"Account details retrieved successfully",
+                "data":AccountSerializer(account).data
+            }, status=status.HTTP_200_OK)
+        except Account.DoesNotExist:
+            return Response({
+                "message":"No account details set up"
+            }, status=status.HTTP_404_NOT_FOUND)
 
 class CreateAccount(APIView):
     def get(self, request):
         try:
             banks = Banks.objects.all()
-            return Response({
-                "message": "Banks retrieved successfully.",
-                "banks": BankSerializer(banks, many=True).data
-            }, status=status.HTTP_200_OK)
+
+            # Set up pagination
+            paginator = PageNumberPagination()
+            paginator.page_size = 10  # Or any size you want
+            paginated_banks = paginator.paginate_queryset(banks, request)
+
+            # Use the paginated queryset in the response
+            return paginator.get_paginated_response(BankSerializer(paginated_banks, many=True).data)
         except Exception as e:
             return Response({
                 "message": str(e)
@@ -872,9 +890,10 @@ class KoraWebhook(APIView):
                     amount=payload['data']['amount'], 
                     reference = payload['data']['reference']
                 )
-                # send_mail('Deposit has been made to your wallet!!',
-                #         f"The sum of ₦{payload['data']['amount']} has been deposited to your wallet",
-                #         EMAIL_HOST_USER, [user.email], fail_silently=False)
+                print('ys')
+                send_mail('Deposit has been made to your wallet!!',
+                        f"The sum of ₦{payload['data']['amount']} has been deposited to your wallet",
+                        EMAIL_HOST_USER, [user.email], fail_silently=False)
                 return Response({'message': 'Wallet credited successfully', 'amount': float(payload['data']['amount'])}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=404)
@@ -1296,7 +1315,7 @@ class DisputeTransaction(APIView):
                                   EMAIL_HOST_USER, [user.email], fail_silently=False)
                         return Response({
                             "message": "Refund request successfully sent.",
-                            "data": DisputeSerializer(dispute).data
+                            "data": DisputeSerializer(dispute, context={'request':request}).data
                         }, status=status.HTTP_200_OK)
                     return Response({
                         "message": "You cannot request refund as you did not initiate transaction"
@@ -1374,11 +1393,26 @@ class DisputeTransaction(APIView):
             dispute = Dispute.objects.get(id=id)
             return Response({
                 "message": "Dispute retrieved successfully",
-                "data": DisputeSerializer(dispute).data
+                "data": DisputeSerializer(dispute, context={"request":request}).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
                 "message": f"Internal Server Error-{str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AllDispute(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        try:
+            print(request.user)
+            disputes = Dispute.objects.filter(Q(transaction__sender=request.user) | Q(transaction__receiver=request.user))
+            return Response({
+                "message":"All disputes retrieved successfully",
+                "data":DisputeSerializer(disputes, many=True, context={'request':request}).data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message":str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1605,6 +1639,7 @@ class PaymentRedirectAPIView(APIView):
                 "status": "error",
                 "message": f"An error occurred: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 def bank_pay(amount, user, metadata=None):
