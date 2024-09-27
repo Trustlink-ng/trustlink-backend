@@ -454,23 +454,21 @@ class UserAccount(APIView):
             }, status=status.HTTP_404_NOT_FOUND)
 
 class CreateAccount(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         try:
             banks = Banks.objects.all()
-
-            # Set up pagination
-            paginator = PageNumberPagination()
-            paginator.page_size = 10  # Or any size you want
-            paginated_banks = paginator.paginate_queryset(banks, request)
-
-            # Use the paginated queryset in the response
-            return paginator.get_paginated_response(BankSerializer(paginated_banks, many=True).data)
+            return Response({
+                "message": "Banks retrieved successfully.",
+                "banks": BankSerializer(banks, many=True).data
+            }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
                 "message": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    permission_classes = [IsAuthenticated]
+
+
 
     def post(self, request):
         data = request.data
