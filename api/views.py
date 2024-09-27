@@ -853,6 +853,32 @@ class KoraWebhook(APIView):
             }, status=status.HTTP_200_OK)
         try:
             with transaction.atomic():
+                if 'metadata' in payload['data']:
+                    sender_id = int(payload['data']['metadata']['sender_id'])
+                    receiver_id = int(payload['data']['metadata']['receiver_id'])
+                    description = payload['data'].get('description', '')
+                    sender = User.objects.get(id = sender_id)
+                    receiver = User.objects.get(id = receiver_id)
+                    amount = float(payload['data']['amount'])
+                    code = random.randint(1000, 9999)
+                    transaction = Transaction.objects.create(
+                        mode="Kora",
+                        sender=sender,
+                        receiver=receiver,
+                        description=description,
+                        amount=float(amount),
+                        code=code
+                    )
+                    send_mail('A payment has been made!!',
+                              f'{sender.email} just sent you ₦{amount}. \n\nRetrieve code from them to complete transaction',
+                              EMAIL_HOST_USER, [receiver.email], fail_silently=False)
+                    send_mail('Your bank account has just been debited',
+                              f'You have just sent the sum of ₦{amount} to {receiver.email}. \n\nOnly give them the code({code}) when you are satisfied with your Purchase.',
+                              EMAIL_HOST_USER, [receiver.email], fail_silently=False)
+                    return Response({
+                        "message": "Transaction initiated successfully",
+                        "data": TransactionSerializer(transaction, context={'request': request}).data
+                    }, status=status.HTTP_200_OK)
                 user_id = payload['data']['payment_reference'].split('-')[1]
                 user = User.objects.get(id=user_id)
                 wallet = Wallet.objects.get(user=user)
@@ -1615,7 +1641,8 @@ class PaymentRedirectAPIView(APIView):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-def bank_pay(amount, user):
+
+def bank_pay(amount, user, metadata=None):
     url = 'https://api.korapay.com/merchant/api/v1/charges/bank-transfer'
     payload = json.dumps({
         "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",
@@ -1625,6 +1652,7 @@ def bank_pay(amount, user):
             'name': f'{user.firstName} {user.lastName}',
             "email": f'{user.email}'
         },
+        'metadata': metadata
     })
     headers = {
         'Authorization': f'Bearer {KORA_SECRET}',
@@ -1633,4 +1661,157 @@ def bank_pay(amount, user):
     response = requests.post(url=url, data=payload, headers=headers)
     return response.json(), response.status_code
 
+class TransferPayment(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        user = request.user
+        data = request.data
+        if not data.get('amount'):
+            return Response({
+                'message': 'Amount is required',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'recipient' not in data:
+            return Response({
+                "status": "Bad Request",
+                "message": "No recipient indicated"
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        if not User.objects.filter(username = data['recipient'].lower()).exists() and not User.objects.filter(email = data['recipient'].lower()).exists():
+            return Response({
+                    "message": "Recipient Not Found, please confirm recipients details",
+                }, status=status.HTTP_404_NOT_FOUND)
+        recipient = data['recipient']
+        recipient_user = User.objects.get(Q(email=recipient.lower()) | Q(username=recipient))
+        if not hasattr(recipient_user, 'wallet'):
+            return Response({
+                'message': 'Recipient wallet not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            float(data['amount'])
+        except ValueError:
+            return Response({
+                'message': 'Amount is required as an integer or float',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        metadata = {
+            'sender_id': user.id,
+            'receiver_id':recipient_user.id,
+        }
+        if data.get('description') is not None: 
+            description = data.get('description')
+            metadata['description'] = description
+        
+        print(metadata)
+        response, status_code = bank_pay(amount=data['amount'], user=user, metadata=metadata)
+        if status_code == 200:
+            data = response['data']['bank_account']
+            data['statusCode'] = 200
+            return Response(data, status=status.HTTP_200_OK)
+        else:
+            data = response['data']
+            data['statusCode'] = status_code
+            return Response(data, status=status_code)
+        
+class CardPayment(APIView):
+    def post(self, request):
+        print('cat')
+        data = request.data
+        user = request.user
+        if 'number' not in data:
+            return Response({
+                'message': 'Card number is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'cvv' not in data:
+            return Response({
+                'message': 'Cvv is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'expiry_month' not in data:
+            return Response({
+                'message': 'Expiry month is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        if 'expiry_year' not in data:
+            return Response({
+                'message': 'Expiry year is required in "card"',
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
+        if 'amount' not in data:
+            return Response({
+                'message': 'Amount is required',
+                'statusCode': 422
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        if 'recipient' not in data:
+            return Response({
+                "status": "Bad Request",
+                "message": "No recipient indicated"
+            }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        
+        if not User.objects.filter(username = data['recipient'].lower()).exists() and not User.objects.filter(email = data['recipient'].lower()).exists():
+            return Response({
+                    "message": "Recipient Not Found, please confirm recipients details",
+                }, status=status.HTTP_404_NOT_FOUND)
+        recipient = data['recipient']
+        recipient_user = User.objects.get(Q(email=recipient.lower()) | Q(username=recipient))
+        if not hasattr(recipient_user, 'wallet'):
+            return Response({
+                'message': 'Recipient wallet not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        metadata = {
+            'sender_id': user.id,
+            'receiver_id':recipient_user.id,
+        }
+        if data.get('description') is not None: 
+            description = data.get('description')
+            metadata['description'] = description
+
+        payload = json.dumps({
+            "reference": f"deposit-{user.id}-{str(uuid.uuid4())}",
+            "card": {
+                "number": data['number'],
+                "cvv": data['cvv'],
+                "expiry_month": data['expiry_month'],
+                "expiry_year": data['expiry_year']
+            },
+            "amount": data['amount'],
+            "currency": "NGN",
+            "customer": {
+                "name": f'{user.firstName} {user.lastName}',
+                "email": user.email
+            },
+            "redirect_url":"https://trustlink-backend.vercel.app/api/webhook",
+            'metadata': metadata
+        })
+        response, status_code = encryption_charge(encryptionKey=os.getenv('ENCRYPTION_KEY'), paymentData=payload)
+        if status_code == 200:
+            transaction_reference = response['data']['transaction_reference']
+            if 'auth_model' not in response['data'] or response['data'].get('auth_model') == 'NO_AUTH':
+                return Response(response['data'], status=status_code)
+            print(response['data']['auth_model'])
+            if response['data']['auth_model'] != 'NO_AUTH':
+                if response['data']['auth_model'] == 'PIN':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'PIN required',
+                        'required fields': ['pin']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == 'OTP':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'OTP required',
+                        'required fields': ['otp']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == '3DS':
+                    return Response({
+                        'redirect_url': response['data']['redirect_url']
+                    }, status=status.HTTP_200_OK)
+                if response['data']['auth_model'] == 'AVS':
+                    return Response({
+                        'transaction_reference': transaction_reference,
+                        'message': 'AVS requuired',
+                        'Required fields': ['state', 'city', 'country', 'address', 'zip_code']
+                    })
+        else:
+            return Response(response['data'], status=status_code)
