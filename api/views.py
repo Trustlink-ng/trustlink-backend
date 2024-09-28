@@ -1376,7 +1376,7 @@ class AllDispute(APIView):
     def get(self, request):
         try:
             print(request.user)
-            disputes = Dispute.objects.filter(Q(transaction__sender=request.user) | Q(transaction__receiver=request.user))
+            disputes = Dispute.objects.filter(Q(transaction__sender=request.user) | Q(transaction__receiver=request.user)).order_by('-date')
             return Response({
                 "message":"All disputes retrieved successfully",
                 "data":DisputeSerializer(disputes, many=True, context={'request':request}).data
@@ -1393,10 +1393,10 @@ class OutgoingHistory(APIView):
     def get(self, request):
         try:
             user = User.objects.get(email=request.user.email)
-            transactions = user.sent_transactions.all()
+            transactions = user.sent_transactions.all().order_by('-date')
             status_query = request.query_params.get('status')
             if status_query:
-                transactions = transactions.filter(status=status_query)
+                transactions = transactions.filter(status=status_query).order_by('-date')
             return Response({
                 "message": "Transactions retrieved successfully",
                 "data": TransactionSerializer(transactions, many=True, context={'request': request}).data
@@ -1412,11 +1412,11 @@ class IncomingHistory(APIView):
 
     def get(self, request):
         try:
-            user = User.objects.get(email=request.user.email)
+            user = User.objects.get(email=request.user.email).order_by('-date')
             transactions = user.received_transactions.all()
             status_query = request.query_params.get('status')
             if status_query:
-                transactions = transactions.filter(status=status_query)
+                transactions = transactions.filter(status=status_query).order_by('-date')
             return Response({
                 "message": "Transactions retrieved successfully",
                 "data": TransactionSerializer(transactions, many=True, context={'request': request}).data
@@ -1436,7 +1436,7 @@ class WalletHistory(APIView):
             wallet = Wallet.objects.get(user=user)
             return Response({
                 "message": "Wallet History retrieved successfully",
-                "data": HistorySerializer(wallet.history, many=True).data
+                "data": HistorySerializer(wallet.history.order_by('-date'), many=True).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
@@ -1467,7 +1467,7 @@ class GeneralTransaction(APIView):
     def get(self, request):
         user = request.user
         try:
-            transactions = Transaction.objects.filter(Q(sender=user) | Q(receiver=user))
+            transactions = Transaction.objects.filter(Q(sender=user) | Q(receiver=user)).order_by('-date')
             return Response({
                 "message": "Transactions retrieved successfully",
                 "data": TransactionSerializer(transactions, many=True, context={'request': request}).data
