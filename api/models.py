@@ -84,6 +84,7 @@ class Transaction(models.Model):
     date = models.DateTimeField(auto_now_add=True, null=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='Pending')
     code = models.CharField(max_length=5)
+    reference = models.CharField(max_length=50, blank=True, null=True)
 
     def __str__(self):
         return f"{self.receiver.email} on {self.date}"
