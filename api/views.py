@@ -640,7 +640,7 @@ class WithdrawWallet(APIView):
                                 "statusCode": 200
                             }, status=status.HTTP_200_OK)
                         return Response({
-                            "message": f"Request failed with status code {payment}"
+                            "message": f"Request failed from kora with status code {payment}"
                         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     return Response({
                         "message": "Insufficient wallet balance",
