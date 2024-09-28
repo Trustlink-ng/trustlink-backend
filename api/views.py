@@ -1312,7 +1312,8 @@ class DisputeTransaction(APIView):
         code = data['code']
         try:
             try:
-                dispute = Dispute.objects.get(id=id)
+                trans = Transaction.objects.get(id=id)
+                dispute = Dispute.objects.get(transaction=trans)
                 recipient = User.objects.get(email=request.user.email)
                 if dispute.transaction.status == 'Cancelled':
                     if dispute.transaction.sender == recipient:
