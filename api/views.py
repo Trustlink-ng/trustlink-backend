@@ -1119,6 +1119,10 @@ class WalletPayment(APIView):
             try:
                 recipient_user = User.objects.get(Q(email=recipient.lower()) | Q(username=recipient))
                 sender_user = User.objects.get(email=request.user.email)
+                if recipient_user == sender_user:
+                    return Response({
+                        "message":"You cannot make a transfer to yourself."
+                    }, status=status.HTTP_400_BAD_REQUEST)
                 if bcrypt.checkpw(pin.encode('utf-8'), sender_user.pin.encode('utf-8')):
                     if hasattr(sender_user, 'wallet'):
                         if sender_user.wallet.balance - float(amount) >= 100:
