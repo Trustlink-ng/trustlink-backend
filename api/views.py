@@ -1376,7 +1376,7 @@ class AllDispute(APIView):
     def get(self, request):
         try:
             print(request.user)
-            disputes = Dispute.objects.filter(Q(transaction__sender=request.user) | Q(transaction__receiver=request.user)).order_by('-date')
+            disputes = Dispute.objects.filter(Q(transaction__sender=request.user) | Q(transaction__receiver=request.user))
             return Response({
                 "message":"All disputes retrieved successfully",
                 "data":DisputeSerializer(disputes, many=True, context={'request':request}).data
