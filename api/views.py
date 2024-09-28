@@ -1480,7 +1480,7 @@ def checkout(amount, narration, customer_name, customer_email, id):
 
     payload = json.dumps({
         "amount": str(amount),
-        "redirect_url": "https://trustlink-backend.vercel.app/api/checkout",
+        "redirect_url": "http://localhost:5173/checkout",
         "currency": "NGN",
         "reference": f"{str(uuid.uuid4())}",
         "narration": narration,
