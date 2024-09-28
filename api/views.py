@@ -1412,8 +1412,8 @@ class IncomingHistory(APIView):
 
     def get(self, request):
         try:
-            user = User.objects.get(email=request.user.email).order_by('-date')
-            transactions = user.received_transactions.all()
+            user = User.objects.get(email=request.user.email)
+            transactions = user.received_transactions.all().order_by('-date')
             status_query = request.query_params.get('status')
             if status_query:
                 transactions = transactions.filter(status=status_query).order_by('-date')
