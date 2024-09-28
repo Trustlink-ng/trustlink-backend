@@ -628,7 +628,7 @@ class WithdrawWallet(APIView):
                         payment = kora_payout(str(amount), str(account.bankCode), str(account.accountNumber),
                                               str(request.user.firstName), str(request.user.email))
                         if payment == 200:
-                            wallet.balance =- float(amount)
+                            wallet.balance = wallet.balance - float(amount)
                             wallet.save()
                             History.objects.create(
                                 wallet=wallet,
