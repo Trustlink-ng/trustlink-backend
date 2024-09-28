@@ -348,7 +348,7 @@ class BeginForgotPassword(APIView):
         # reset_path = reverse('password-reset-confirm', kwargs={'token':token})
 
         protocol = 'https' if request.is_secure() else 'http'
-        reset_url = f"{protocol}://{domain}/auth/complete-reset?token={token}"
+        reset_url = f"http://localhost:5173/auth/complete-reset?token={token}"
 
         subject = "Password Reset Request"
         message = f"Hi, {user.firstName}, \n\nPlease Click the link below to reset your password. Ignore if you didn't request a new password. \n\n{reset_url}"
@@ -623,7 +623,6 @@ class WithdrawWallet(APIView):
             wallet = Wallet.objects.get(user=request.user)
             try:
                 account = Account.objects.get(user=request.user)
-                print(account.user.pin)
                 if bcrypt.checkpw(pin.encode('utf-8'), account.user.pin.encode('utf-8')):
                     if wallet.balance - float(amount) >= 100:
                         payment = kora_payout(str(amount), str(account.bankCode), str(account.accountNumber),
@@ -1623,7 +1622,7 @@ def bank_pay(amount, user, metadata=None):
         },
     }
     if metadata:
-        payload['reference'] = f'transfer-{metadata['sender_id']}-{metadata['receiver_id']}-{metadata['description'].replace(' ', '_')}-{str(uuid.uuid4())[:6]}'
+        payload['reference'] = f"transfer-{metadata['sender_id']}-{metadata['receiver_id']}-{metadata['description'].replace(' ', '_')}-{str(uuid.uuid4())[:6]}"
     print(payload['reference'])
     payload = json.dumps(payload)
     headers = {
@@ -1744,7 +1743,7 @@ class CardPayment(APIView):
         metadata['description'] = data.get('description', 'Payment')
 
         payload = json.dumps({
-            "reference": f'transfer-{metadata['sender_id']}-{metadata['receiver_id']}-{metadata['description'].replace(' ', '_')}-{str(uuid.uuid4())[:6]}',
+            "reference": f"transfer-{metadata['sender_id']}-{metadata['receiver_id']}-{metadata['description'].replace(' ', '_')}-{str(uuid.uuid4())[:6]}",
             "card": {
                 "number": data['number'],
                 "cvv": data['cvv'],
