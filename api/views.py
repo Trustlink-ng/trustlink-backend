@@ -348,7 +348,7 @@ class BeginForgotPassword(APIView):
         # reset_path = reverse('password-reset-confirm', kwargs={'token':token})
 
         protocol = 'https' if request.is_secure() else 'http'
-        reset_url = f"http://localhost:5173/auth/complete-reset?token={token}"
+        reset_url = f"https://trustlink-six.vercel.app/auth/complete-reset?token={token}"
 
         subject = "Password Reset Request"
         message = f"Hi, {user.firstName}, \n\nPlease Click the link below to reset your password. Ignore if you didn't request a new password. \n\n{reset_url}"
