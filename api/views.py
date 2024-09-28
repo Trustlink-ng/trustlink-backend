@@ -1318,7 +1318,7 @@ class DisputeTransaction(APIView):
                 if dispute.transaction.status == 'Cancelled':
                     if dispute.transaction.sender == recipient:
                         if code == dispute.code:
-                            recipient.wallet.balance = + dispute.transaction.amount
+                            recipient.wallet.balance = recipient.wallet.balance + dispute.transaction.amount
                             recipient.wallet.save()
                             dispute.transaction.status = 'Refunded'
                             dispute.transaction.save()
