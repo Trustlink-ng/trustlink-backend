@@ -4,7 +4,6 @@ import hmac
 import json
 import os
 import uuid
-
 import rest_framework_simplejwt.tokens
 from django.db import transaction
 from django.http import JsonResponse
@@ -14,6 +13,7 @@ import requests
 from django.core.mail import send_mail
 from django.core.validators import validate_email
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -438,8 +438,22 @@ def store_banks(request):
         return JsonResponse({"error": f"Request failed with status code {response.status_code}"},
                             status=response.status_code)
 
+class UserAccount(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        try:
+            account = Account.objects.get(user=request.user)
+            return Response({
+                "message":"Account details retrieved successfully",
+                "data":AccountSerializer(account).data
+            }, status=status.HTTP_200_OK)
+        except Account.DoesNotExist:
+            return Response({
+                "message":"No account details set up"
+            }, status=status.HTTP_404_NOT_FOUND)
 
 class CreateAccount(APIView):
+    permission_classes = [IsAuthenticated]
     def get(self, request):
         try:
             banks = Banks.objects.all()
@@ -452,7 +466,8 @@ class CreateAccount(APIView):
                 "message": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    permission_classes = [IsAuthenticated]
+
+
 
     def post(self, request):
         data = request.data
@@ -1265,7 +1280,7 @@ class DisputeTransaction(APIView):
                                   EMAIL_HOST_USER, [user.email], fail_silently=False)
                         return Response({
                             "message": "Refund request successfully sent.",
-                            "data": DisputeSerializer(dispute).data
+                            "data": DisputeSerializer(dispute, context={'request':request}).data
                         }, status=status.HTTP_200_OK)
                     return Response({
                         "message": "You cannot request refund as you did not initiate transaction"
@@ -1343,11 +1358,26 @@ class DisputeTransaction(APIView):
             dispute = Dispute.objects.get(id=id)
             return Response({
                 "message": "Dispute retrieved successfully",
-                "data": DisputeSerializer(dispute).data
+                "data": DisputeSerializer(dispute, context={"request":request}).data
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
                 "message": f"Internal Server Error-{str(e)}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class AllDispute(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        try:
+            print(request.user)
+            disputes = Dispute.objects.filter(Q(transaction__sender=request.user) | Q(transaction__receiver=request.user))
+            return Response({
+                "message":"All disputes retrieved successfully",
+                "data":DisputeSerializer(disputes, many=True, context={'request':request}).data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "message":str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -1574,6 +1604,7 @@ class PaymentRedirectAPIView(APIView):
                 "status": "error",
                 "message": f"An error occurred: {str(e)}"
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 def bank_pay(amount, user, metadata=None):

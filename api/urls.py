@@ -29,6 +29,7 @@ urlpatterns = [
     path('api/card-auth', CardAuth.as_view(), name='card-auth'),
     path('api/webhook', KoraWebhook.as_view(), name='webhook'),
     path('api/transfer/pay', TransferPayment.as_view()),
-    path('api/card/pay', CardPayment.as_view())
-    # path('auth/logout', LogoutView.as_view(), name='logout')
+    path('api/card/pay', CardPayment.as_view()),
+    path('api/my/account', UserAccount.as_view(), name='logout'),
+    path('api/all/disputes', AllDispute.as_view(), name='all-dispute')
 ]
