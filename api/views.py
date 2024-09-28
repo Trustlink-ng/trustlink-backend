@@ -572,7 +572,7 @@ def kora_payout(amount, bank, account, name, email):
     url = "https://api.korapay.com/merchant/api/v1/transactions/disburse"
 
     payload = json.dumps({
-        "reference": f"pay-{name}-{str(uuid.uuid4())}",
+        "reference": f"pay-{str(uuid.uuid4())}",
         "destination": {
             "type": "bank_account",
             "amount": amount,
