@@ -1576,13 +1576,33 @@ class PaymentRedirectAPIView(APIView):
                 user = User.objects.get(pk=id)
                 try:
                     code = random.randint(1000, 9999)
-                    transaction = Transaction.objects.create(
-                        mode="Kora",
-                        receiver=user,
-                        description=transaction_data['data'].get('description'),
-                        amount=float(transaction_data['data'].get('amount_paid')),
-                        code=code
-                    )
+                    try:
+                        sender_email = transaction_data['data']['customer'].get('email')
+                        sender = User.objects.get(email=sender_email)
+                        transaction = Transaction.objects.create(
+                            mode="Kora",
+                            sender=sender,
+                            receiver=user,
+                            description=transaction_data['data'].get('description'),
+                            amount=float(transaction_data['data'].get('amount_paid')),
+                            code=code
+                        )
+                    except User.DoesNotExist:
+                        transaction = Transaction.objects.create(
+                            mode="Kora",
+                            receiver=user,
+                            description=transaction_data['data'].get('description'),
+                            amount=float(transaction_data['data'].get('amount_paid')),
+                            code=code
+                        )
+                    except Exception:
+                        transaction = Transaction.objects.create(
+                            mode="Kora",
+                            receiver=user,
+                            description=transaction_data['data'].get('description'),
+                            amount=float(transaction_data['data'].get('amount_paid')),
+                            code=code
+                        )
                     send_mail('A payment has been made!!',
                               f'{transaction_data["data"]["customer"].get("name")} just sent you ₦{transaction_data["data"].get("amount_paid")}. \n\nRetrieve code from them to complete transaction',
                               EMAIL_HOST_USER, [user.email], fail_silently=False)
