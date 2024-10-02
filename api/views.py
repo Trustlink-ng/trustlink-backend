@@ -1616,7 +1616,7 @@ class PaymentRedirectAPIView(APIView):
                               f'{transaction_data["data"]["customer"].get("name")} just sent you ₦{transaction_data["data"].get("amount_paid")}. \n\nRetrieve code from them to complete transaction',
                               EMAIL_HOST_USER, [user.email], fail_silently=False)
                     send_mail('Payment Successful',
-                              f'You have just sent the sum of ₦{transaction_data["data"].get("amount_paid")} to {user.email}. \n\nOnly give them the code({code}) when you are satisfied with your Purchase.',
+                              f'You have just sent the sum of ₦{transaction_data["data"].get("amount_paid")} to {user.email}. \n\n Transation ID- {transaction.id}-{transaction.code} \n\nOnly give them the code({code}) when you are satisfied with your Purchase. \n\nFor any dispute, reply this mail stating the transaction ID, email of the user you made payment to and reason of dispute with evidence if any.',
                               EMAIL_HOST_USER, [transaction_data["data"]["customer"].get("email")], fail_silently=False)
                     return Response({
                         "message": "Transaction initiated successfully",
