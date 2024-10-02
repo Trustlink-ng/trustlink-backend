@@ -1579,14 +1579,23 @@ class PaymentRedirectAPIView(APIView):
                     try:
                         sender_email = transaction_data['data']['customer'].get('email')
                         sender = User.objects.get(email=sender_email)
-                        transaction = Transaction.objects.create(
-                            mode="Kora",
-                            sender=sender,
-                            receiver=user,
-                            description=transaction_data['data'].get('description'),
-                            amount=float(transaction_data['data'].get('amount_paid')),
-                            code=code
-                        )
+                        if sender == user:
+                            transaction = Transaction.objects.create(
+                                mode="Kora",
+                                receiver=user,
+                                description=transaction_data['data'].get('description'),
+                                amount=float(transaction_data['data'].get('amount_paid')),
+                                code=code
+                            )
+                        else:
+                            transaction = Transaction.objects.create(
+                                mode="Kora",
+                                sender=sender,
+                                receiver=user,
+                                description=transaction_data['data'].get('description'),
+                                amount=float(transaction_data['data'].get('amount_paid')),
+                                code=code
+                            )
                     except User.DoesNotExist:
                         transaction = Transaction.objects.create(
                             mode="Kora",
